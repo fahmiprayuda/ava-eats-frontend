@@ -1,0 +1,172 @@
+
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { apiRequest } from "@/lib/api";
+
+export default function LoginPage() {
+    const router = useRouter();
+
+    const [phone, setPhone] = useState("");
+    const [password, setPassword] = useState("");
+    const [showPassword, setShowPassword] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
+
+    async function handleLogin(event) {
+        event.preventDefault();
+        setError("");
+        setLoading(true);
+
+        try {
+            // 1. Login menggunakan nomor WhatsApp dan password
+            const result = await apiRequest("/customers/login", {
+                method: "POST",
+                body: JSON.stringify({
+                    phone: phone.trim(),
+                    password,
+                }),
+            });
+
+            if (!result.access_token) {
+                throw new Error("Token login tidak ditemukan.");
+            }
+
+            // 2. Simpan token untuk request berikutnya
+            localStorage.setItem(
+                "ava_eats_access_token",
+                result.access_token
+            );
+
+            // 3. Ambil profil customer yang sedang login
+            const customer = await apiRequest("/customers/me");
+
+            localStorage.setItem(
+                "ava_eats_customer",
+                JSON.stringify(customer)
+            );
+
+            // 4. Lanjut ke checkout
+            router.push("/checkout");
+        } catch (err) {
+            localStorage.removeItem("ava_eats_access_token");
+            localStorage.removeItem("ava_eats_customer");
+
+            setError(
+                err.message || "Login gagal. Periksa nomor WhatsApp dan password."
+            );
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    return (
+        <main className="min-h-screen bg-[#F8F3E9] px-5 py-8">
+            <div className="mx-auto flex min-h-[85vh] w-full max-w-[440px] flex-col justify-center">
+                <Link
+                    href="/"
+                    className="mb-8 inline-flex w-fit items-center gap-2 text-sm text-[#6B6459]"
+                >
+                    <span aria-hidden="true">←</span>
+                    Kembali ke menu
+                </Link>
+
+                <div className="mb-8">
+                    <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#7A2E3A] text-3xl">
+                        🍱
+                    </div>
+
+                    <p className="mb-2 text-sm font-semibold tracking-[0.2em] text-[#7A2E3A]">
+                        AVA EATS
+                    </p>
+
+                    <h1 className="text-3xl font-bold leading-tight text-[#2A2620]">
+                        Selamat datang kembali!
+                    </h1>
+
+                    <p className="mt-3 text-sm leading-6 text-[#6B6459]">
+                        Login untuk melanjutkan pesanan dan menggunakan alamat
+                        pengiriman yang sudah tersimpan.
+                    </p>
+                </div>
+
+                <form onSubmit={handleLogin} className="space-y-5">
+                    <div>
+                        <label
+                            htmlFor="phone"
+                            className="mb-2 block text-sm font-semibold text-[#2A2620]"
+                        >
+                            Nomor WhatsApp
+                        </label>
+
+                        <input
+                            id="phone"
+                            type="tel"
+                            autoComplete="tel"
+                            inputMode="tel"
+                            placeholder="Contoh: 081234567890"
+                            value={phone}
+                            onChange={(event) => setPhone(event.target.value)}
+                            required
+                            className="w-full rounded-xl border border-[#E8D6CE] bg-white px-4 py-3.5 text-base text-[#2A2620] outline-none transition focus:border-[#7A2E3A] focus:ring-2 focus:ring-[#7A2E3A]/10"
+                        />
+                    </div>
+
+                    <div>
+                        <label
+                            htmlFor="password"
+                            className="mb-2 block text-sm font-semibold text-[#2A2620]"
+                        >
+                            Password
+                        </label>
+
+                        <div className="flex items-center rounded-xl border border-[#E8D6CE] bg-white pr-4 transition focus-within:border-[#7A2E3A] focus-within:ring-2 focus-within:ring-[#7A2E3A]/10">
+                            <input
+                                id="password"
+                                type={showPassword ? "text" : "password"}
+                                autoComplete="current-password"
+                                placeholder="Masukkan password"
+                                value={password}
+                                onChange={(event) => setPassword(event.target.value)}
+                                required
+                                className="w-full rounded-xl bg-transparent px-4 py-3.5 text-base text-[#2A2620] outline-none"
+                            />
+
+                            <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="shrink-0 text-sm font-semibold text-[#7A2E3A]"
+                            >
+                                {showPassword ? "Sembunyikan" : "Lihat"}
+                            </button>
+                        </div>
+                    </div>
+
+                    {error && (
+                        <div
+                            role="alert"
+                            className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+                        >
+                            {error}
+                        </div>
+                    )}
+
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        className="w-full rounded-xl bg-[#7A2E3A] px-4 py-4 font-semibold text-white transition hover:bg-[#652530] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                        {loading ? "Sedang login..." : "Login"}
+                    </button>
+                </form>
+
+                <p className="mt-6 text-center text-xs leading-5 text-[#6B6459]">
+                    Dengan login, lo bisa melanjutkan checkout menggunakan profil
+                    dan alamat pengiriman customer.
+                </p>
+            </div>
+        </main>
+    );
+}
