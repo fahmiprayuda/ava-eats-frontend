@@ -110,15 +110,18 @@ function OrdersContent() {
     }, [router]);
 
     useEffect(() => {
-        loadOrders();
+        const timer = setTimeout(() => {
+            loadOrders();
+        }, 0);
+        return () => clearTimeout(timer);
     }, [loadOrders]);
 
-    // ── Show success notice if redirected from checkout ───────────────────
-    useEffect(() => {
-        if (searchParams.get("success")) {
-            setNotice("🎉 Pesanan berhasil dibuat! Terima kasih Moms.");
-        }
-    }, [searchParams]);
+    // Derived success notice from URL param if no explicit notice set
+    const displayNotice =
+        notice ||
+        (searchParams.get("success")
+            ? "🎉 Pesanan berhasil dibuat! Terima kasih Moms."
+            : "");
 
     // ── Auto-poll pending orders every 5 s ────────────────────────────────
     useEffect(() => {
@@ -171,8 +174,9 @@ function OrdersContent() {
         });
 
         // Return cleanup for unmount
+        const activeTimers = pollingRef.current;
         return () => {
-            Object.values(pollingRef.current).forEach((t) => clearTimeout(t));
+            Object.values(activeTimers).forEach((t) => clearTimeout(t));
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [orders]);
@@ -295,9 +299,9 @@ function OrdersContent() {
                     </div>
                 )}
 
-                {notice && (
+                {displayNotice && (
                     <div className="mb-4 rounded-xl border border-[#D8E2D5] bg-[#EDF3E9] p-3 text-sm text-[#456044]">
-                        {notice}
+                        {displayNotice}
                     </div>
                 )}
 

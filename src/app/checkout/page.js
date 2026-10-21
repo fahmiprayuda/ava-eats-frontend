@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiRequest } from "@/lib/api";
 
@@ -52,15 +53,19 @@ export default function CheckoutPage() {
 
     // ── Load cart from localStorage ───────────────────────────────────────
     useEffect(() => {
-        try {
-            const savedCart = localStorage.getItem("ava_eats_checkout_cart");
-            const parsedCart = savedCart ? JSON.parse(savedCart) : [];
-            setItems(Array.isArray(parsedCart) ? parsedCart : []);
-        } catch {
-            setItems([]);
-        } finally {
-            setLoading(false);
-        }
+        const timer = setTimeout(() => {
+            try {
+                const savedCart = localStorage.getItem("ava_eats_checkout_cart");
+                const parsedCart = savedCart ? JSON.parse(savedCart) : [];
+                setItems(Array.isArray(parsedCart) ? parsedCart : []);
+            } catch {
+                setItems([]);
+            } finally {
+                setLoading(false);
+            }
+        }, 0);
+
+        return () => clearTimeout(timer);
     }, []);
 
     // ── Load customer profile + addresses ─────────────────────────────────
@@ -327,9 +332,9 @@ export default function CheckoutPage() {
     return (
         <main className="checkout-page">
             <header className="checkout-header">
-                <a href="/" className="back-link">
+                <Link href="/" className="back-link">
                     ← Kembali ke menu
-                </a>
+                </Link>
 
                 <div className="checkout-brand">
                     <div className="checkout-logo">A</div>
@@ -349,9 +354,9 @@ export default function CheckoutPage() {
                     <span>🛒</span>
                     <h2>Keranjangmu masih kosong</h2>
                     <p>Yuk, pilih menu yang kamu suka terlebih dahulu.</p>
-                    <a href="/" className="checkout-primary-link">
+                    <Link href="/" className="checkout-primary-link">
                         Pilih Menu
-                    </a>
+                    </Link>
                 </section>
             ) : (
                 <form className="checkout-content" onSubmit={handleSubmit}>
