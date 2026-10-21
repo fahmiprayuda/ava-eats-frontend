@@ -35,7 +35,7 @@ export default function RootLayout({ children }) {
         <Script
           src={MIDTRANS_SNAP_URL}
           data-client-key={process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY}
-          strategy="lazyOnload"
+          strategy="afterInteractive"
         />
       </body>
     </html>

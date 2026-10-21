@@ -182,35 +182,38 @@ function OrdersContent() {
     }, [orders]);
 
     // ── Open Midtrans Snap popup ──────────────────────────────────────────
-    function openSnapPopup(token, orderId) {
-        if (!window.snap) {
-            // Snap.js not yet loaded; fall back gracefully
-            setNotice(
-                "Halaman pembayaran sedang disiapkan. Silakan coba kembali dalam beberapa detik."
-            );
+    function openSnapPopup(token, fallbackUrl) {
+        if (typeof window !== "undefined" && window.snap) {
+            window.snap.pay(token, {
+                onSuccess: async () => {
+                    setNotice("🎉 Pembayaran berhasil!");
+                    await loadOrders();
+                },
+                onPending: () => {
+                    setNotice("Pembayaran sedang diproses. Harap tunggu konfirmasi.");
+                },
+                onError: (result) => {
+                    setError(
+                        "Pembayaran gagal: " +
+                        (result?.status_message || "Silakan coba kembali.")
+                    );
+                },
+                onClose: () => {
+                    setNotice(
+                        'Popup ditutup. Klik "Lanjutkan Pembayaran" untuk melanjutkan.'
+                    );
+                },
+            });
             return;
         }
 
-        window.snap.pay(token, {
-            onSuccess: async () => {
-                setNotice("🎉 Pembayaran berhasil!");
-                await loadOrders();
-            },
-            onPending: () => {
-                setNotice("Pembayaran sedang diproses. Harap tunggu konfirmasi.");
-            },
-            onError: (result) => {
-                setError(
-                    "Pembayaran gagal: " +
-                    (result?.status_message || "Silakan coba kembali.")
-                );
-            },
-            onClose: () => {
-                setNotice(
-                    'Popup ditutup. Klik "Lanjutkan Pembayaran" untuk melanjutkan.'
-                );
-            },
-        });
+        // Fallback jika window.snap belum ready
+        if (fallbackUrl) {
+            window.open(fallbackUrl, "_blank", "noopener,noreferrer");
+            setNotice("Membuka halaman pembayaran Midtrans di tab baru...");
+        } else {
+            setNotice("SDK pembayaran sedang memuat, silakan klik sekali lagi.");
+        }
     }
 
     // ── Retry / create new payment ────────────────────────────────────────
@@ -233,7 +236,7 @@ function OrdersContent() {
             const url = payment.payment_url;
 
             if (token) {
-                openSnapPopup(token, order.id);
+                openSnapPopup(token, url);
             } else if (url) {
                 window.open(url, "_blank", "noopener,noreferrer");
                 setNotice("Halaman pembayaran dibuka di tab baru.");
