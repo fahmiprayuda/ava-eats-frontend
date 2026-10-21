@@ -146,8 +146,7 @@ export default function CheckoutPage() {
                     if (latest.status === "approved") {
                         setMessage("🎉 Pembayaran berhasil! Pesananmu sedang diproses.");
                         setMessageType("success");
-                        localStorage.removeItem("ava_eats_checkout_cart");
-                        localStorage.removeItem("ava_eats_checkout_draft");
+                        clearCheckoutCart();
                         return; // stop polling
                     }
                 }
@@ -168,6 +167,20 @@ export default function CheckoutPage() {
         };
     }, [activeOrderId, paymentStatus]);
 
+    function clearCheckoutCart() {
+        try {
+            localStorage.removeItem("ava_eats_checkout_cart");
+            localStorage.removeItem("ava_eats_checkout_draft");
+            setItems([]);
+            if (typeof window !== "undefined") {
+                window.dispatchEvent(new Event("ava_eats_cart_updated"));
+                window.dispatchEvent(new Event("storage"));
+            }
+        } catch {
+            setItems([]);
+        }
+    }
+
     // ── Open Midtrans Snap popup ──────────────────────────────────────────
     function openSnapPopup(token, orderId) {
         if (!window.snap) {
@@ -180,25 +193,22 @@ export default function CheckoutPage() {
         window.snap.pay(token, {
             onSuccess: () => {
                 setPaymentStatus("approved");
-                setMessage("🎉 Pembayaran berhasil! Pesananmu sedang diproses.");
-                setMessageType("success");
-                localStorage.removeItem("ava_eats_checkout_cart");
-                localStorage.removeItem("ava_eats_checkout_draft");
-                setTimeout(() => router.push(`/orders`), 2000);
+                clearCheckoutCart();
+                router.push(`/orders?success=1`);
             },
             onPending: () => {
                 setPaymentStatus("pending");
-                setMessage("Pembayaran pending. Kamu bisa cek status di halaman Pesanan.");
-                setMessageType("info");
+                clearCheckoutCart();
+                router.push(`/orders`);
             },
             onError: (result) => {
                 setPaymentStatus("rejected");
-                setMessage("Pembayaran gagal: " + (result?.status_message || "Coba lagi."));
-                setMessageType("error");
+                clearCheckoutCart();
+                router.push(`/orders`);
             },
             onClose: () => {
-                setMessage("Popup ditutup. Klik \"Lanjutkan Pembayaran\" untuk melanjutkan.");
-                setMessageType("info");
+                clearCheckoutCart();
+                router.push(`/orders`);
             },
         });
     }
@@ -256,6 +266,9 @@ export default function CheckoutPage() {
 
             setActiveOrderId(order.id);
 
+            // Bersihkan keranjang belanja seketika agar tidak terjadi double order
+            clearCheckoutCart();
+
             // ── Step 2: Create Midtrans gateway transaction ───────────────
             setMessage("Menyiapkan pembayaran...");
 
@@ -281,10 +294,9 @@ export default function CheckoutPage() {
                 setMessage("");
                 openSnapPopup(token, order.id);
             } else if (paymentUrl) {
-                // Fallback: open external URL in new tab
-                setMessage("Pesanan dibuat. Silakan selesaikan pembayaran.");
-                setMessageType("info");
+                // Fallback: buka tab baru dan arahkan halaman ini ke /orders
                 window.open(paymentUrl, "_blank", "noopener,noreferrer");
+                router.push("/orders");
             } else {
                 throw new Error("Link/token pembayaran tidak ditemukan dari server.");
             }
@@ -296,6 +308,11 @@ export default function CheckoutPage() {
         } finally {
             setSubmitting(false);
         }
+    }
+
+    function handleClearCart() {
+        clearCheckoutCart();
+        router.push("/");
     }
 
     // ── Derived ───────────────────────────────────────────────────────────
@@ -353,7 +370,7 @@ export default function CheckoutPage() {
                 <section className="checkout-empty">
                     <span>🛒</span>
                     <h2>Keranjangmu masih kosong</h2>
-                    <p>Yuk, pilih menu yang kamu suka terlebih dahulu.</p>
+                    <p>Yuk, pilih menu yang Moms suka terlebih dahulu.</p>
                     <Link href="/" className="checkout-primary-link">
                         Pilih Menu
                     </Link>
@@ -367,7 +384,7 @@ export default function CheckoutPage() {
                             <span className="step-number">1</span>
                             <div>
                                 <h2>Metode Penerimaan</h2>
-                                <p>Pilih bagaimana kamu ingin menerima pesanan.</p>
+                                <p>Pilih bagaimana Moms ingin menerima pesanan.</p>
                             </div>
                         </div>
 
@@ -568,7 +585,7 @@ export default function CheckoutPage() {
                             <span className="step-number">2</span>
                             <div>
                                 <h2>Metode Pembayaran</h2>
-                                <p>Pilih metode yang akan kamu gunakan.</p>
+                                <p>Pilih metode yang akan Moms gunakan.</p>
                             </div>
                         </div>
 
@@ -615,12 +632,22 @@ export default function CheckoutPage() {
 
                     {/* ── Step 3: Catatan & Ringkasan Pesanan ── */}
                     <section className="checkout-card">
-                        <div className="checkout-section-title">
-                            <span className="step-number">3</span>
-                            <div>
-                                <h2>Ringkasan Pesanan</h2>
-                                <p>Periksa menu dan jumlah pesananmu.</p>
+                        <div className="checkout-section-title flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <span className="step-number">3</span>
+                                <div>
+                                    <h2>Ringkasan Pesanan</h2>
+                                    <p>Periksa menu dan jumlah pesananmu.</p>
+                                </div>
                             </div>
+
+                            <button
+                                type="button"
+                                onClick={handleClearCart}
+                                className="text-xs font-semibold text-[#7A2E3A] hover:underline"
+                            >
+                                Kosongkan
+                            </button>
                         </div>
 
                         <div className="checkout-item-list">
@@ -715,10 +742,10 @@ export default function CheckoutPage() {
                     {paymentStatus === "expired" && (
                         <div className="rounded-xl border border-red-200 bg-red-50 p-4">
                             <p className="font-semibold text-red-800">
-                                Pembayaran Kedaluwarsa
+                                Pembayaran Sudah Kedaluwarsa
                             </p>
                             <p className="mt-1 text-sm text-red-700">
-                                Waktu pembayaran habis. Silakan buat pesanan baru.
+                                Waktu pembayaran habis. Silahkan cek di halaman Riwayat Pesanan.
                             </p>
                         </div>
                     )}

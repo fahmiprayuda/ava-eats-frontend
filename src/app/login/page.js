@@ -9,17 +9,20 @@ import { apiRequest } from "@/lib/api";
 function LoginForm() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const redirectTo = searchParams.get("redirect") || "/checkout";
+    const redirectTo = searchParams.get("redirect") || "/";
+    const isExpired = searchParams.get("expired") === "1";
 
     const [phone, setPhone] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+    const [successMsg, setSuccessMsg] = useState("");
 
     async function handleLogin(event) {
         event.preventDefault();
         setError("");
+        setSuccessMsg("");
         setLoading(true);
 
         try {
@@ -50,8 +53,20 @@ function LoginForm() {
                 JSON.stringify(customer)
             );
 
-            // 4. Redirect ke halaman asal (atau checkout)
-            router.push(redirectTo);
+            // 4. Berikan feedback sukses yang jelas
+            const customerName = customer?.name ? ` ${customer.name}` : "";
+            setSuccessMsg(`Login berhasil! Selamat datang kembali, Moms${customerName}! 🎉`);
+
+            // Jika bukan diarahkan dari checkout, bersihkan sisa keranjang checkout lama
+            if (redirectTo !== "/checkout") {
+                localStorage.removeItem("ava_eats_checkout_cart");
+                localStorage.removeItem("ava_eats_checkout_draft");
+            }
+
+            // 5. Redirect ke halaman tujuan (default: homepage /)
+            setTimeout(() => {
+                router.push(redirectTo);
+            }, 1000);
         } catch (err) {
             localStorage.removeItem("ava_eats_access_token");
             localStorage.removeItem("ava_eats_customer");
@@ -59,7 +74,6 @@ function LoginForm() {
             setError(
                 err.message || "Login gagal. Periksa nomor WhatsApp dan password."
             );
-        } finally {
             setLoading(false);
         }
     }
@@ -95,6 +109,33 @@ function LoginForm() {
                 </div>
 
                 <form onSubmit={handleLogin} className="space-y-5">
+                    {isExpired && !error && !successMsg && (
+                        <div
+                            role="status"
+                            className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3.5 text-sm font-semibold text-amber-800"
+                        >
+                            ⏳ Sesi loginmu telah berakhir. Silakan masuk kembali.
+                        </div>
+                    )}
+
+                    {successMsg && (
+                        <div
+                            role="status"
+                            className="rounded-xl border border-green-200 bg-green-50 px-4 py-3.5 text-sm font-semibold text-green-800"
+                        >
+                            ✓ {successMsg}
+                        </div>
+                    )}
+
+                    {error && (
+                        <div
+                            role="alert"
+                            className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+                        >
+                            {error}
+                        </div>
+                    )}
+
                     <div>
                         <label
                             htmlFor="phone"
@@ -110,9 +151,10 @@ function LoginForm() {
                             inputMode="tel"
                             placeholder="Contoh: 081234567890"
                             value={phone}
+                            disabled={loading || Boolean(successMsg)}
                             onChange={(event) => setPhone(event.target.value)}
                             required
-                            className="w-full rounded-xl border border-[#E8D6CE] bg-white px-4 py-3.5 text-base text-[#2A2620] outline-none transition focus:border-[#7A2E3A] focus:ring-2 focus:ring-[#7A2E3A]/10"
+                            className="w-full rounded-xl border border-[#E8D6CE] bg-white px-4 py-3.5 text-base text-[#2A2620] outline-none transition focus:border-[#7A2E3A] focus:ring-2 focus:ring-[#7A2E3A]/10 disabled:opacity-60"
                         />
                     </div>
 
@@ -131,9 +173,10 @@ function LoginForm() {
                                 autoComplete="current-password"
                                 placeholder="Masukkan password"
                                 value={password}
+                                disabled={loading || Boolean(successMsg)}
                                 onChange={(event) => setPassword(event.target.value)}
                                 required
-                                className="w-full rounded-xl bg-transparent px-4 py-3.5 text-base text-[#2A2620] outline-none"
+                                className="w-full rounded-xl bg-transparent px-4 py-3.5 text-base text-[#2A2620] outline-none disabled:opacity-60"
                             />
 
                             <button
@@ -146,26 +189,17 @@ function LoginForm() {
                         </div>
                     </div>
 
-                    {error && (
-                        <div
-                            role="alert"
-                            className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-                        >
-                            {error}
-                        </div>
-                    )}
-
                     <button
                         type="submit"
-                        disabled={loading}
+                        disabled={loading || Boolean(successMsg)}
                         className="w-full rounded-xl bg-[#7A2E3A] px-4 py-4 font-semibold text-white transition hover:bg-[#652530] disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                        {loading ? "Sedang login..." : "Login"}
+                        {successMsg ? "Mengalihkan..." : loading ? "Sedang login..." : "Login"}
                     </button>
                 </form>
 
                 <p className="mt-6 text-center text-xs leading-5 text-[#6B6459]">
-                    Dengan login, lo bisa melanjutkan checkout menggunakan profil
+                    Dengan login, lo bisa melanjutkan pemesanan menggunakan profil
                     dan alamat pengiriman customer.
                 </p>
             </div>

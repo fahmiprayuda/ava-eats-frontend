@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { apiRequest } from "@/lib/api";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { apiRequest, isTokenExpired } from "@/lib/api";
 
 // Metadata tampilan sementara karena field ini belum tersedia di API.
 const productUiMetadata = {
@@ -23,6 +24,7 @@ const formatRupiah = (amount) =>
 
 export default function Home() {
   const router = useRouter();
+  const pathname = usePathname();
 
   const [products, setProducts] = useState([]);
   const [productsLoading, setProductsLoading] = useState(true);
@@ -33,6 +35,100 @@ export default function Home() {
   const [quantities, setQuantities] = useState({});
   const [cartOpen, setCartOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [customer, setCustomer] = useState(null);
+  const [storeInfoOpen, setStoreInfoOpen] = useState(false);
+  const [toast, setToast] = useState("");
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        const token = localStorage.getItem("ava_eats_access_token");
+        if (!token || isTokenExpired(token)) {
+          localStorage.removeItem("ava_eats_access_token");
+          localStorage.removeItem("ava_eats_customer");
+          setCustomer(null);
+          return;
+        }
+
+        const savedCustomer = localStorage.getItem("ava_eats_customer");
+        if (savedCustomer) {
+          setCustomer(JSON.parse(savedCustomer));
+        } else {
+          apiRequest("/customers/me")
+            .then((data) => {
+              setCustomer(data);
+              localStorage.setItem("ava_eats_customer", JSON.stringify(data));
+            })
+            .catch(() => {
+              setCustomer(null);
+            });
+        }
+      } catch {
+        setCustomer(null);
+      }
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  function handleLogout() {
+    const name = customer?.name || "Moms";
+    localStorage.removeItem("ava_eats_access_token");
+    localStorage.removeItem("ava_eats_customer");
+    localStorage.removeItem("ava_eats_checkout_cart");
+    localStorage.removeItem("ava_eats_checkout_draft");
+    setQuantities({});
+    setCustomer(null);
+    setMenuOpen(false);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("ava_eats_cart_updated"));
+    }
+    setToast(`Berhasil keluar dari akun. Sampai jumpa lagi, ${name}! 👋`);
+    setTimeout(() => setToast(""), 4000);
+  }
+
+  // Sinkronisasi keranjang dari localStorage saat mount, ganti rute (kembali dari checkout/orders), atau event custom
+  const syncCartFromStorage = useCallback(() => {
+    try {
+      const savedCart = localStorage.getItem("ava_eats_checkout_cart");
+      if (savedCart) {
+        const parsed = JSON.parse(savedCart);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const initialQuantities = {};
+          parsed.forEach((item) => {
+            if (item.product_id && item.quantity > 0) {
+              initialQuantities[item.product_id] = item.quantity;
+            }
+          });
+          setQuantities(initialQuantities);
+          return;
+        }
+      }
+      // Jika keranjang di storage kosong / habis checkout, bersihkan quantities!
+      setQuantities({});
+    } catch {
+      setQuantities({});
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(syncCartFromStorage, 0);
+
+    // Ketika user kembali dari checkout, tab aktif kembali, atau keranjang di-clear dari halaman lain
+    window.addEventListener("focus", syncCartFromStorage);
+    window.addEventListener("pageshow", syncCartFromStorage);
+    window.addEventListener("storage", syncCartFromStorage);
+    window.addEventListener("ava_eats_cart_updated", syncCartFromStorage);
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("focus", syncCartFromStorage);
+      window.removeEventListener("pageshow", syncCartFromStorage);
+      window.removeEventListener("storage", syncCartFromStorage);
+      window.removeEventListener("ava_eats_cart_updated", syncCartFromStorage);
+    };
+  }, [pathname, syncCartFromStorage]);
 
   useEffect(() => {
     let cancelled = false;
@@ -130,16 +226,61 @@ export default function Home() {
         Math.min(product.stock, currentQuantity + amount)
       );
 
-      return {
+      const nextQuantities = {
         ...current,
         [productId]: nextQuantity,
       };
+
+      try {
+        const activeItems = products
+          .map((p) => ({
+            product_id: p.id,
+            name: p.name,
+            price: p.price,
+            quantity: p.id === productId ? nextQuantity : (nextQuantities[p.id] || 0),
+          }))
+          .filter((item) => item.quantity > 0);
+
+        if (activeItems.length > 0) {
+          localStorage.setItem(
+            "ava_eats_checkout_cart",
+            JSON.stringify(activeItems)
+          );
+        } else {
+          localStorage.removeItem("ava_eats_checkout_cart");
+        }
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("ava_eats_cart_updated"));
+        }
+      } catch (err) {
+        console.warn("Gagal menyimpan keranjang:", err);
+      }
+
+      return nextQuantities;
     });
   }
 
 
   return (
     <main className="app-shell">
+      {/* Toast Notifikasi Logout / Feedback */}
+      {toast && (
+        <div
+          role="status"
+          className="fixed top-5 left-1/2 z-50 flex w-[90%] max-w-sm -translate-x-1/2 items-center justify-between gap-3 rounded-2xl border border-[#D8E2D5] bg-[#EDF3E9] p-4 text-sm font-medium text-[#456044] shadow-xl backdrop-blur transition"
+        >
+          <span>{toast}</span>
+          <button
+            type="button"
+            onClick={() => setToast("")}
+            className="text-lg font-bold text-[#456044] hover:opacity-70"
+            aria-label="Tutup notifikasi"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       <header className="brand-header">
         <div className="brand-top">
           <div className="brand-logo">A</div>
@@ -153,19 +294,35 @@ export default function Home() {
           </div>
 
           <button
+            type="button"
             className="icon-button"
-            aria-label="Informasi bisnis"
-            onClick={() =>
-              alert("Selamat datang di Ava Eats Moms!")
-            }
+            aria-label="Buka menu navigasi"
+            onClick={() => setMenuOpen(true)}
           >
-            i
+            <svg
+              width="17"
+              height="17"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
           </button>
         </div>
 
         <div className="announcement">
           <span>✦</span>
-          <p>Selamat datang di Ava Eats Moms! Semoga harimu menyenangkan.</p>
+          <p>
+            Selamat datang di Ava Eats Moms
+            {customer?.name ? ` ${customer.name}` : ""}! Semoga harimu
+            menyenangkan.
+          </p>
         </div>
       </header>
 
@@ -491,12 +648,261 @@ export default function Home() {
                   JSON.stringify(checkoutItems)
                 );
 
+                setCartOpen(false);
                 router.push("/checkout");
               }}
 
             >
               Lanjut ke Checkout <span>→</span>
             </button>
+          </section>
+        </div>
+      )}
+
+      {/* ── Slide-up Drawer Menu Navigasi (Hamburger) ── */}
+      {menuOpen && (
+        <div
+          className="sheet-backdrop"
+          onClick={() => setMenuOpen(false)}
+        >
+          <section
+            className="cart-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="nav-menu-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="sheet-handle" />
+
+            <div className="sheet-heading">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#7A2E3A] text-xs font-bold text-white">
+                  A
+                </div>
+                <div>
+                  <p className="eyebrow">AVA EATS</p>
+                  <h2 id="nav-menu-title" className="text-xl font-bold text-[#2A2620]">
+                    Menu Navigasi
+                  </h2>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="close-button"
+                onClick={() => setMenuOpen(false)}
+                aria-label="Tutup menu"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Profile / Login Card */}
+            <div className="mb-4 rounded-2xl border border-[#E8D6CE] bg-[#FAF7F2] p-4">
+              {customer ? (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#7A2E3A] text-base font-bold text-white">
+                      {customer.name ? customer.name.charAt(0).toUpperCase() : "M"}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <strong className="truncate text-sm text-[#2A2620]">
+                          {customer.name}
+                        </strong>
+                        <span className="shrink-0 rounded-full bg-[#6E8F63]/15 px-2 py-0.5 text-[10px] font-semibold text-[#496442]">
+                          Member
+                        </span>
+                      </div>
+                      <p className="truncate text-xs text-[#6B6459]">{customer.phone}</p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="shrink-0 rounded-lg border border-[#E4D5D5] px-2.5 py-1 text-xs font-semibold text-[#7A2E3A] transition hover:bg-white"
+                  >
+                    Logout
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#E8D6CE] text-lg">
+                      👤
+                    </div>
+                    <div>
+                      <strong className="block text-sm text-[#2A2620]">
+                        Halo, Moms! 👋
+                      </strong>
+                      <span className="text-xs text-[#6B6459]">
+                        Masuk untuk kelola pesanan & alamat
+                      </span>
+                    </div>
+                  </div>
+
+                  <Link
+                    href="/login"
+                    onClick={() => setMenuOpen(false)}
+                    className="shrink-0 rounded-xl bg-[#7A2E3A] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#64252F]"
+                  >
+                    Masuk
+                  </Link>
+                </div>
+              )}
+            </div>
+
+            {/* Navigation List */}
+            <nav className="space-y-2">
+              <Link
+                href="/orders"
+                onClick={() => setMenuOpen(false)}
+                className="flex items-center justify-between rounded-xl border border-[#EEE5DF] bg-white p-3.5 transition hover:bg-[#FAF7F2]"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#F5E8E8] text-lg">
+                    📦
+                  </span>
+                  <div>
+                    <strong className="block text-sm text-[#2A2620]">
+                      Pesanan Saya
+                    </strong>
+                    <span className="text-xs text-[#78686A]">
+                      Pantau status & riwayat transaksi
+                    </span>
+                  </div>
+                </div>
+                <span className="text-base font-bold text-[#80515A]">→</span>
+              </Link>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  if (totalItems > 0) {
+                    setCartOpen(true);
+                  }
+                }}
+                className="flex w-full items-center justify-between rounded-xl border border-[#EEE5DF] bg-white p-3.5 text-left transition hover:bg-[#FAF7F2]"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#F3E1DE]/50 text-lg">
+                    🛒
+                  </span>
+                  <div>
+                    <strong className="block text-sm text-[#2A2620]">
+                      Keranjang Belanja
+                    </strong>
+                    <span className="text-xs text-[#78686A]">
+                      {totalItems > 0
+                        ? `${totalItems} item dipilih • ${formatRupiah(totalPrice)}`
+                        : "Keranjang masih kosong"}
+                    </span>
+                  </div>
+                </div>
+                {totalItems > 0 ? (
+                  <span className="rounded-full bg-[#7A2E3A] px-2.5 py-0.5 text-xs font-bold text-white">
+                    {totalItems}
+                  </span>
+                ) : (
+                  <span className="text-xs text-[#A08E8B]">Buka</span>
+                )}
+              </button>
+
+              <Link
+                href="/checkout"
+                onClick={() => {
+                  setMenuOpen(false);
+                  if (totalItems === 0) {
+                    localStorage.removeItem("ava_eats_checkout_cart");
+                    localStorage.removeItem("ava_eats_checkout_draft");
+                  }
+                }}
+                className="flex items-center justify-between rounded-xl border border-[#EEE5DF] bg-white p-3.5 transition hover:bg-[#FAF7F2]"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#E4EBDD]/70 text-lg">
+                    🛵
+                  </span>
+                  <div>
+                    <strong className="block text-sm text-[#2A2620]">
+                      Halaman Checkout
+                    </strong>
+                    <span className="text-xs text-[#78686A]">
+                      Selesaikan pesanan dan pembayaran
+                    </span>
+                  </div>
+                </div>
+                <span className="text-base font-bold text-[#80515A]">→</span>
+              </Link>
+
+              {/* Accordion Info Toko */}
+              <button
+                type="button"
+                onClick={() => setStoreInfoOpen((prev) => !prev)}
+                className="flex w-full items-center justify-between rounded-xl border border-[#EEE5DF] bg-white p-3.5 text-left transition hover:bg-[#FAF7F2]"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#FAF0E6] text-lg">
+                    📍
+                  </span>
+                  <div>
+                    <strong className="block text-sm text-[#2A2620]">
+                      Info Toko & Lokasi
+                    </strong>
+                    <span className="text-xs text-[#78686A]">
+                      Alamat pickup, jam buka, kontak
+                    </span>
+                  </div>
+                </div>
+                <span className="text-xs font-bold text-[#78686A]">
+                  {storeInfoOpen ? "▲" : "▼"}
+                </span>
+              </button>
+
+              {storeInfoOpen && (
+                <div className="rounded-xl border border-[#D5E2CF] bg-[#E4EBDD]/40 p-4 text-xs leading-5 text-[#496442]">
+                  <p className="font-bold text-sm text-[#2A2620]">
+                    {process.env.NEXT_PUBLIC_STORE_NAME || "Ava Eats"}
+                  </p>
+                  <p className="mt-1">
+                    {process.env.NEXT_PUBLIC_STORE_ADDRESS ||
+                      "Cluster The Awa, Blok B1 No 27, Ciriung, Kec. Cibinong, Kabupaten Bogor, Jawa Barat 16918"}
+                  </p>
+                  <p className="mt-2 font-semibold">
+                    📞 WhatsApp: {process.env.NEXT_PUBLIC_STORE_PHONE || "082213232456"}
+                  </p>
+                  <p className="mt-0.5">
+                    ⏰ Jam Buka: Setiap Hari (08.00 - 20.00 WIB)
+                  </p>
+                  <div className="mt-3 flex gap-2">
+                    <a
+                      href={`https://wa.me/62${(process.env.NEXT_PUBLIC_STORE_PHONE || "082213232456").replace(/^0/, "")}?text=Halo%20Admin%20Ava%20Eats`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex rounded-lg bg-[#6E8F63] px-3 py-1.5 font-semibold text-white transition hover:bg-[#58764F]"
+                    >
+                      Chat WhatsApp ↗
+                    </a>
+                    <a
+                      href={`https://www.google.com/maps/dir/?api=1&destination=${process.env.NEXT_PUBLIC_STORE_LATITUDE || "-6.459818049304167"},${process.env.NEXT_PUBLIC_STORE_LONGITUDE || "106.87384403716149"}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex rounded-lg border border-[#6E8F63] px-3 py-1.5 font-semibold text-[#496442] transition hover:bg-white"
+                    >
+                      Google Maps ↗
+                    </a>
+                  </div>
+                </div>
+              )}
+            </nav>
+
+            <div className="mt-5 border-t border-[#EEE5DF] pt-4 text-center">
+              <p className="text-[11px] text-[#A08E8B]">
+                Ava Eats • Homemade With Love for Your Little One
+              </p>
+            </div>
           </section>
         </div>
       )}

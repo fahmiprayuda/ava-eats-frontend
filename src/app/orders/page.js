@@ -89,6 +89,25 @@ function OrdersContent() {
     // Track which pending orders need polling
     const pollingRef = useRef({});
 
+    // ── Pagination state (5 orders per page) ─────────────────────────────
+    const [currentPage, setCurrentPage] = useState(1);
+    const ITEMS_PER_PAGE = 5;
+
+    const totalPages = Math.max(1, Math.ceil(orders.length / ITEMS_PER_PAGE));
+    const validCurrentPage = Math.min(currentPage, totalPages);
+    const startIndex = (validCurrentPage - 1) * ITEMS_PER_PAGE;
+    const paginatedOrders = orders.slice(
+        startIndex,
+        startIndex + ITEMS_PER_PAGE
+    );
+
+    const handlePageChange = (newPage) => {
+        setCurrentPage(newPage);
+        if (typeof window !== "undefined") {
+            window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+    };
+
     // ── Load orders ───────────────────────────────────────────────────────
     const loadOrders = useCallback(async () => {
         setLoading(true);
@@ -113,6 +132,15 @@ function OrdersContent() {
         const timer = setTimeout(() => {
             loadOrders();
         }, 0);
+        try {
+            localStorage.removeItem("ava_eats_checkout_cart");
+            localStorage.removeItem("ava_eats_checkout_draft");
+            if (typeof window !== "undefined") {
+                window.dispatchEvent(new Event("ava_eats_cart_updated"));
+            }
+        } catch {
+            // ignore
+        }
         return () => clearTimeout(timer);
     }, [loadOrders]);
 
@@ -327,7 +355,7 @@ function OrdersContent() {
                     </div>
                 ) : (
                     <div className="space-y-4">
-                        {orders.map((order) => {
+                        {paginatedOrders.map((order) => {
                             const isBusy = busyOrderId === order.id;
                             const orderStatus = (order.status || "").toLowerCase();
                             const paymentStatus = (
@@ -469,6 +497,54 @@ function OrdersContent() {
                                 </article>
                             );
                         })}
+                    </div>
+                )}
+
+                {/* ── Pagination Controls ── */}
+                {!loading && totalPages > 1 && (
+                    <div className="mt-6 flex flex-col items-center gap-3">
+                        <p className="text-xs text-[#78686A]">
+                            Menampilkan {startIndex + 1} -{" "}
+                            {Math.min(startIndex + ITEMS_PER_PAGE, orders.length)}{" "}
+                            dari {orders.length} pesanan
+                        </p>
+
+                        <div className="flex items-center gap-1.5">
+                            <button
+                                type="button"
+                                onClick={() => handlePageChange(validCurrentPage - 1)}
+                                disabled={validCurrentPage === 1}
+                                className="rounded-xl border border-[#DCCBC5] bg-white px-3 py-2 text-xs font-semibold text-[#7A3545] transition hover:bg-[#FAF7F2] disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                                ← Sebelumnya
+                            </button>
+
+                            <div className="flex items-center gap-1">
+                                {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNumber) => (
+                                    <button
+                                        key={pageNumber}
+                                        type="button"
+                                        onClick={() => handlePageChange(pageNumber)}
+                                        className={`h-8 w-8 rounded-xl text-xs font-bold transition ${
+                                            validCurrentPage === pageNumber
+                                                ? "bg-[#7A3545] text-white shadow-sm"
+                                                : "border border-[#EEE5DF] bg-white text-[#503E40] hover:bg-[#FAF7F2]"
+                                        }`}
+                                    >
+                                        {pageNumber}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() => handlePageChange(validCurrentPage + 1)}
+                                disabled={validCurrentPage === totalPages}
+                                className="rounded-xl border border-[#DCCBC5] bg-white px-3 py-2 text-xs font-semibold text-[#7A3545] transition hover:bg-[#FAF7F2] disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                                Selanjutnya →
+                            </button>
+                        </div>
                     </div>
                 )}
 
