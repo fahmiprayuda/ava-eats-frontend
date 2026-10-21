@@ -1,70 +1,18 @@
-
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { apiRequest } from "@/lib/api";
 
-const products = [
-  {
-    id: 1,
-    name: "Nasi Ayam Bakar",
-    description: "Ayam bakar, nasi hangat, sambal",
-    price: 25000,
-    category: "Paket Nasi",
-    emoji: "🍗",
-    available: true,
-    popular: true,
-  },
-  {
-    id: 2,
-    name: "Nasi Ayam Geprek",
-    description: "Ayam crispy dengan sambal geprek",
-    price: 22000,
-    category: "Paket Nasi",
-    emoji: "🍚",
-    available: true,
-    popular: false,
-  },
-  {
-    id: 3,
-    name: "Nasi Rendang",
-    description: "Rendang sapi dan nasi putih",
-    price: 30000,
-    category: "Paket Nasi",
-    emoji: "🥘",
-    available: true,
-    popular: true,
-  },
-  {
-    id: 4,
-    name: "Nasi Telur",
-    description: "Telur balado, nasi, dan lalapan",
-    price: 15000,
-    category: "Paket Nasi",
-    emoji: "🍳",
-    available: true,
-    popular: false,
-  },
-  {
-    id: 5,
-    name: "Es Teh Manis",
-    description: "Teh segar, manisnya pas",
-    price: 5000,
-    category: "Minuman",
-    emoji: "🧋",
-    available: true,
-    popular: false,
-  },
-  {
-    id: 6,
-    name: "Air Mineral",
-    description: "Air mineral dingin",
-    price: 4000,
-    category: "Minuman",
-    emoji: "💧",
-    available: true,
-    popular: false,
-  },
-];
+// Metadata tampilan sementara karena field ini belum tersedia di API.
+const productUiMetadata = {
+  "Nasi Ayam Bakar": { category: "Paket Nasi", emoji: "🍗", popular: true },
+  "Nasi Ayam Geprek": { category: "Paket Nasi", emoji: "🍚", popular: false },
+  "Nasi Rendang": { category: "Paket Nasi", emoji: "🥘", popular: true },
+  "Nasi Telur": { category: "Paket Nasi", emoji: "🍳", popular: false },
+  "Es Teh Manis": { category: "Minuman", emoji: "🧋", popular: false },
+  "Air Mineral": { category: "Minuman", emoji: "💧", popular: false },
+};
 
 const formatRupiah = (amount) =>
   new Intl.NumberFormat("id-ID", {
@@ -74,11 +22,61 @@ const formatRupiah = (amount) =>
   }).format(amount);
 
 export default function Home() {
+  const router = useRouter();
+
+  const [products, setProducts] = useState([]);
+  const [productsLoading, setProductsLoading] = useState(true);
+  const [productsError, setProductsError] = useState("");
+
   const [activeTab, setActiveTab] = useState("available");
   const [activeCategory, setActiveCategory] = useState("Semua");
   const [quantities, setQuantities] = useState({});
   const [cartOpen, setCartOpen] = useState(false);
   const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProducts() {
+      try {
+        setProductsLoading(true);
+        setProductsError("");
+
+        const result = await apiRequest("/products");
+
+        if (cancelled) return;
+
+        const normalizedProducts = (result.products || []).map((product) => {
+          const metadata = productUiMetadata[product.name] || {};
+
+          return {
+            ...product,
+            price: Number(product.price),
+            available: Boolean(product.is_available) && product.stock > 0,
+            category: metadata.category || "Lainnya",
+            emoji: metadata.emoji || "🍽️",
+            popular: metadata.popular || false,
+          };
+        });
+
+        setProducts(normalizedProducts);
+      } catch (error) {
+        if (!cancelled) {
+          setProductsError(error.message || "Gagal mengambil data menu.");
+        }
+      } finally {
+        if (!cancelled) setProductsLoading(false);
+      }
+    }
+
+    loadProducts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+
 
   const categories = [
     "Semua",
@@ -94,12 +92,13 @@ export default function Home() {
         activeCategory === "Semua" ||
         product.category === activeCategory;
 
-      const matchesSearch =
-        product.name.toLowerCase().includes(search.toLowerCase());
+      const matchesSearch = product.name
+        .toLowerCase()
+        .includes(search.toLowerCase());
 
       return matchesTab && matchesCategory && matchesSearch;
     });
-  }, [activeTab, activeCategory, search]);
+  }, [products, activeTab, activeCategory, search]);
 
   const cartItems = products.filter(
     (product) => (quantities[product.id] || 0) > 0
@@ -111,16 +110,24 @@ export default function Home() {
   );
 
   const totalPrice = cartItems.reduce(
-    (total, product) =>
-      total + product.price * quantities[product.id],
+    (total, product) => total + product.price * quantities[product.id],
     0
   );
 
+
   function changeQuantity(productId, amount) {
+    const product = products.find(
+      (item) => item.id === productId
+    );
+
+    if (!product) return;
+
     setQuantities((current) => {
+      const currentQuantity = current[productId] || 0;
+
       const nextQuantity = Math.max(
         0,
-        (current[productId] || 0) + amount
+        Math.min(product.stock, currentQuantity + amount)
       );
 
       return {
@@ -129,6 +136,7 @@ export default function Home() {
       };
     });
   }
+
 
   return (
     <main className="app-shell">
@@ -229,107 +237,134 @@ export default function Home() {
           ))}
         </div>
 
-        <div className="product-grid">
-          {visibleProducts.map((product) => {
-            const quantity = quantities[product.id] || 0;
 
-            return (
-              <article className="product-card" key={product.id}>
-                <div className="product-image">
-                  <span className="food-emoji">
-                    {product.emoji}
-                  </span>
+        {productsLoading && (
+          <p className="py-8 text-center text-sm text-[#6B6459]">
+            Memuat menu dari server...
+          </p>
+        )}
 
-                  {product.popular && (
-                    <span className="popular-badge">
-                      ★ Favorit
-                    </span>
-                  )}
-
-                  {!product.available && (
-                    <span className="unavailable-badge">
-                      Habis
-                    </span>
-                  )}
-                </div>
-
-                <div className="product-content">
-                  <p className="product-category">
-                    {product.category}
-                  </p>
-
-                  <h3>{product.name}</h3>
-
-                  <p className="product-description">
-                    {product.description}
-                  </p>
-
-                  <div className="product-bottom">
-                    <div>
-                      <p className="price-label">Mulai dari</p>
-                      <p className="product-price">
-                        {formatRupiah(product.price)}
-                      </p>
-                    </div>
-
-                    {product.available ? (
-                      quantity === 0 ? (
-                        <button
-                          className="add-button"
-                          onClick={() =>
-                            changeQuantity(product.id, 1)
-                          }
-                          aria-label={`Tambah ${product.name}`}
-                        >
-                          +
-                        </button>
-                      ) : (
-                        <div className="quantity-control">
-                          <button
-                            onClick={() =>
-                              changeQuantity(product.id, -1)
-                            }
-                            aria-label={`Kurangi ${product.name}`}
-                          >
-                            −
-                          </button>
-                          <span>{quantity}</span>
-                          <button
-                            onClick={() =>
-                              changeQuantity(product.id, 1)
-                            }
-                            aria-label={`Tambah ${product.name}`}
-                          >
-                            +
-                          </button>
-                        </div>
-                      )
-                    ) : (
-                      <span className="sold-out">Habis</span>
-                    )}
-                  </div>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-
-        {visibleProducts.length === 0 && (
-          <div className="empty-state">
-            <span>🍽️</span>
-            <h3>Menu belum ditemukan</h3>
-            <p>Coba kata kunci atau kategori lainnya, ya.</p>
+        {!productsLoading && productsError && (
+          <div className="py-8 text-center">
+            <p className="text-sm text-red-600">{productsError}</p>
             <button
-              className="text-button"
-              onClick={() => {
-                setSearch("");
-                setActiveCategory("Semua");
-              }}
+              type="button"
+              className="text-button mt-3"
+              onClick={() => window.location.reload()}
             >
-              Reset pencarian
+              Coba lagi
             </button>
           </div>
         )}
+
+
+        {!productsLoading && !productsError && (
+          <div className="product-grid">
+            {visibleProducts.map((product) => {
+              const quantity = quantities[product.id] || 0;
+
+              return (
+                <article className="product-card" key={product.id}>
+                  <div className="product-image">
+                    <span className="food-emoji">{product.emoji}</span>
+
+                    {product.popular && (
+                      <span className="popular-badge">★ Favorit</span>
+                    )}
+
+                    {!product.available && (
+                      <span className="unavailable-badge">Habis</span>
+                    )}
+                  </div>
+
+                  <div className="product-content">
+                    <p className="product-category">{product.category}</p>
+
+                    <div className="flex items-center justify-between gap-2">
+                      <h3>{product.name}</h3>
+
+                      <span
+                        className={`shrink-0 text-xs ${product.available ? "text-[#6B6459]" : "text-red-600"
+                          }`}
+                      >
+                        {product.stock > 0 ? `Stok: ${product.stock}` : "Habis"}
+                      </span>
+                    </div>
+
+                    <p className="product-description">
+                      {product.description}
+                    </p>
+
+                    <div className="product-bottom">
+                      <div>
+                        <p className="price-label">Mulai dari</p>
+                        <p className="product-price">
+                          {formatRupiah(product.price)}
+                        </p>
+                      </div>
+
+                      {product.available ? (
+                        quantity === 0 ? (
+                          <button
+                            type="button"
+                            disabled={quantity >= product.stock}
+                            onClick={() => changeQuantity(product.id, 1)}
+                            aria-label={`Tambah ${product.name}`}
+                            className="disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            +
+                          </button>
+                        ) : (
+                          <div className="quantity-control">
+                            <button
+                              type="button"
+                              onClick={() => changeQuantity(product.id, -1)}
+                              aria-label={`Kurangi ${product.name}`}
+                            >
+                              −
+                            </button>
+                            <span>{quantity}</span>
+                            <button
+                              type="button"
+                              disabled={quantity >= product.stock}
+                              onClick={() => changeQuantity(product.id, 1)}
+                              aria-label={`Tambah ${product.name}`}
+                              className="disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              +
+                            </button>
+                          </div>
+                        )
+                      ) : (
+                        <span className="sold-out">Habis</span>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+
+
+        {!productsLoading &&
+          !productsError &&
+          visibleProducts.length === 0 && (
+            <div className="empty-state">
+              <span>🍽️</span>
+              <h3>Menu belum ditemukan</h3>
+              <p>Coba kata kunci atau kategori lainnya, ya.</p>
+              <button
+                className="text-button"
+                onClick={() => {
+                  setSearch("");
+                  setActiveCategory("Semua");
+                }}
+              >
+                Reset pencarian
+              </button>
+            </div>
+          )}
       </section>
 
       <footer className="page-footer">
@@ -456,7 +491,7 @@ export default function Home() {
                   JSON.stringify(checkoutItems)
                 );
 
-                window.location.href = "/checkout";
+                router.push("/checkout");
               }}
 
             >

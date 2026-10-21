@@ -22,9 +22,13 @@ export async function apiRequest(path, options = {}) {
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-        throw new Error(
-            data.detail || data.message || "Terjadi kesalahan pada server."
-        );
+        const message =
+            data.detail || data.message || "Terjadi kesalahan pada server.";
+
+        // Attach HTTP status to the error for auth guards
+        const error = new Error(message);
+        error.status = response.status;
+        throw error;
     }
 
     return data;

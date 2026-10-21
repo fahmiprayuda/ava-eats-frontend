@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -12,35 +11,50 @@ const formatRupiah = (amount) =>
         maximumFractionDigits: 0,
     }).format(amount);
 
-export default function CheckoutPage() {
-    const [items, setItems] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [recipientName, setRecipientName] = useState("");
-    const [whatsapp, setWhatsapp] = useState("");
-    const [address, setAddress] = useState("");
-    const [notes, setNotes] = useState("");
-    const [paymentMethod, setPaymentMethod] = useState("qris");
-    const [message, setMessage] = useState("");
+// ─── payment method → Midtrans payment_method param ───────────────────────
+const PAYMENT_METHOD_MAP = {
+    qris: "other_qris",
+    bank_transfer: "bank_transfer",
+};
 
+export default function CheckoutPage() {
     const router = useRouter();
 
+    // ── cart ──────────────────────────────────────────────────────────────
+    const [items, setItems] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    // ── customer / auth ───────────────────────────────────────────────────
     const [customer, setCustomer] = useState(null);
     const [addresses, setAddresses] = useState([]);
     const [selectedAddressId, setSelectedAddressId] = useState("");
     const [profileLoading, setProfileLoading] = useState(true);
     const [profileError, setProfileError] = useState("");
 
-    const selectedAddress = addresses.find(
-        (address) => String(address.id) === String(selectedAddressId)
-    );
-
+    // ── form ──────────────────────────────────────────────────────────────
+    const [notes, setNotes] = useState("");
+    const [paymentMethod, setPaymentMethod] = useState("qris");
     const [fulfillmentMethod, setFulfillmentMethod] = useState("delivery");
 
+    // ── checkout state ────────────────────────────────────────────────────
+    const [submitting, setSubmitting] = useState(false);
+    const [message, setMessage] = useState("");
+    const [messageType, setMessageType] = useState("info"); // "info" | "error" | "success"
+
+    // ── payment state ─────────────────────────────────────────────────────
+    const [activeOrderId, setActiveOrderId] = useState(null);
+    const [paymentStatus, setPaymentStatus] = useState("");
+    const [snapToken, setSnapToken] = useState("");
+
+    const selectedAddress = addresses.find(
+        (a) => String(a.id) === String(selectedAddressId)
+    );
+
+    // ── Load cart from localStorage ───────────────────────────────────────
     useEffect(() => {
         try {
             const savedCart = localStorage.getItem("ava_eats_checkout_cart");
             const parsedCart = savedCart ? JSON.parse(savedCart) : [];
-
             setItems(Array.isArray(parsedCart) ? parsedCart : []);
         } catch {
             setItems([]);
@@ -49,6 +63,7 @@ export default function CheckoutPage() {
         }
     }, []);
 
+    // ── Load customer profile + addresses ─────────────────────────────────
     useEffect(() => {
         let cancelled = false;
 
@@ -57,27 +72,20 @@ export default function CheckoutPage() {
                 setProfileLoading(true);
                 setProfileError("");
 
-                // Ambil profil customer dari backend
                 const profile = await apiRequest("/customers/me");
-
                 if (cancelled) return;
                 setCustomer(profile);
 
-                // Ambil alamat milik customer tersebut
                 const result = await apiRequest(
                     `/customers/${profile.id}/addresses`
                 );
-
                 if (cancelled) return;
 
                 const customerAddresses = result.addresses || [];
                 setAddresses(customerAddresses);
 
-                // Prioritaskan alamat utama
-                const defaultAddress = customerAddresses.find(
-                    (address) => address.is_default
-                );
-
+                // Auto-select default address
+                const defaultAddress = customerAddresses.find((a) => a.is_default);
                 if (defaultAddress) {
                     setSelectedAddressId(String(defaultAddress.id));
                 } else if (customerAddresses.length > 0) {
@@ -85,7 +93,19 @@ export default function CheckoutPage() {
                 }
             } catch (error) {
                 if (!cancelled) {
-                    setProfileError(error.message || "Gagal mengambil data customer.");
+                    // If 401 / unauthenticated → redirect to login
+                    const isAuthError =
+                        error.status === 401 ||
+                        /401|unauthorized|unauthenticated/i.test(error.message);
+
+                    if (isAuthError) {
+                        router.replace("/login?redirect=/checkout");
+                        return;
+                    }
+
+                    setProfileError(
+                        error.message || "Gagal mengambil data profil."
+                    );
                 }
             } finally {
                 if (!cancelled) setProfileLoading(false);
@@ -93,87 +113,209 @@ export default function CheckoutPage() {
         }
 
         loadCustomerData();
+        return () => { cancelled = true; };
+    }, [router]);
 
+    // ── Payment status polling (after order created) ──────────────────────
+    useEffect(() => {
+        if (!activeOrderId || ["approved", "expired", "rejected"].includes(paymentStatus)) return;
+
+        let cancelled = false;
+        let timer;
+
+        async function poll() {
+            try {
+                const result = await apiRequest(
+                    `/payments/orders/${activeOrderId}`
+                );
+                if (cancelled) return;
+
+                const payments = Array.isArray(result)
+                    ? result
+                    : result.payments || [];
+
+                if (payments.length > 0) {
+                    const latest = [...payments].sort((a, b) => b.id - a.id)[0];
+                    setPaymentStatus(latest.status);
+
+                    if (latest.status === "approved") {
+                        setMessage("🎉 Pembayaran berhasil! Pesananmu sedang diproses.");
+                        setMessageType("success");
+                        localStorage.removeItem("ava_eats_checkout_cart");
+                        localStorage.removeItem("ava_eats_checkout_draft");
+                        return; // stop polling
+                    }
+                }
+            } catch (err) {
+                console.warn("Polling payment status failed:", err);
+            }
+
+            if (!cancelled) {
+                timer = setTimeout(poll, 5000);
+            }
+        }
+
+        // Start polling with a small initial delay
+        timer = setTimeout(poll, 3000);
         return () => {
             cancelled = true;
+            clearTimeout(timer);
         };
-    }, []);
+    }, [activeOrderId, paymentStatus]);
 
+    // ── Open Midtrans Snap popup ──────────────────────────────────────────
+    function openSnapPopup(token, orderId) {
+        if (!window.snap) {
+            // Snap.js not yet loaded; fall back to URL redirect
+            setMessage("Halaman pembayaran siap. Klik tombol untuk melanjutkan.");
+            setMessageType("info");
+            return;
+        }
+
+        window.snap.pay(token, {
+            onSuccess: () => {
+                setPaymentStatus("approved");
+                setMessage("🎉 Pembayaran berhasil! Pesananmu sedang diproses.");
+                setMessageType("success");
+                localStorage.removeItem("ava_eats_checkout_cart");
+                localStorage.removeItem("ava_eats_checkout_draft");
+                setTimeout(() => router.push(`/orders`), 2000);
+            },
+            onPending: () => {
+                setPaymentStatus("pending");
+                setMessage("Pembayaran pending. Kamu bisa cek status di halaman Pesanan.");
+                setMessageType("info");
+            },
+            onError: (result) => {
+                setPaymentStatus("rejected");
+                setMessage("Pembayaran gagal: " + (result?.status_message || "Coba lagi."));
+                setMessageType("error");
+            },
+            onClose: () => {
+                setMessage("Popup ditutup. Klik \"Lanjutkan Pembayaran\" untuk melanjutkan.");
+                setMessageType("info");
+            },
+        });
+    }
+
+    // ── Submit checkout ───────────────────────────────────────────────────
+    async function handleSubmit(event) {
+        event.preventDefault();
+        setMessage("");
+
+        if (!items.length) {
+            setMessage("Keranjang belanja masih kosong.");
+            setMessageType("error");
+            return;
+        }
+
+        if (!customer) {
+            router.push("/login?redirect=/checkout");
+            return;
+        }
+
+        if (fulfillmentMethod === "delivery" && !selectedAddress) {
+            setMessage("Pilih alamat pengiriman terlebih dahulu.");
+            setMessageType("error");
+            return;
+        }
+
+        try {
+            setSubmitting(true);
+            setMessage("Membuat pesanan...");
+            setMessageType("info");
+
+            // ── Step 1: Create order ──────────────────────────────────────
+            const orderResult = await apiRequest("/orders", {
+                method: "POST",
+                body: JSON.stringify({
+                    fulfillment_method: fulfillmentMethod,
+                    address_id:
+                        fulfillmentMethod === "delivery" ? selectedAddress.id : null,
+                    items: items.map((item) => ({
+                        product_id: item.product_id,
+                        quantity: item.quantity,
+                    })),
+                    notes: notes.trim() || null,
+                    payment_method: paymentMethod,
+                }),
+            });
+
+            const order = orderResult.order ?? orderResult;
+
+            if (!order?.id) {
+                throw new Error(
+                    "Pesanan berhasil dikirim, tetapi ID order tidak ditemukan."
+                );
+            }
+
+            setActiveOrderId(order.id);
+
+            // ── Step 2: Create Midtrans gateway transaction ───────────────
+            setMessage("Menyiapkan pembayaran...");
+
+            const paymentResult = await apiRequest(
+                `/payments/orders/${order.id}/gateway`,
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        payment_method: PAYMENT_METHOD_MAP[paymentMethod] ?? "other_qris",
+                    }),
+                }
+            );
+
+            const token = paymentResult.gateway_token || paymentResult.snap_token;
+            const paymentUrl = paymentResult.payment_url || "";
+
+            setPaymentStatus(paymentResult.status || "pending");
+
+            // Store token for re-opening popup after close
+            if (token) {
+                setSnapToken(token);
+                localStorage.setItem("ava_eats_created_order", JSON.stringify(order));
+                setMessage("");
+                openSnapPopup(token, order.id);
+            } else if (paymentUrl) {
+                // Fallback: open external URL in new tab
+                setMessage("Pesanan dibuat. Silakan selesaikan pembayaran.");
+                setMessageType("info");
+                window.open(paymentUrl, "_blank", "noopener,noreferrer");
+            } else {
+                throw new Error("Link/token pembayaran tidak ditemukan dari server.");
+            }
+        } catch (error) {
+            setMessage(
+                error.message || "Terjadi kesalahan saat membuat pesanan."
+            );
+            setMessageType("error");
+        } finally {
+            setSubmitting(false);
+        }
+    }
+
+    // ── Derived ───────────────────────────────────────────────────────────
     const totalItems = useMemo(
         () => items.reduce((sum, item) => sum + item.quantity, 0),
         [items]
     );
 
     const totalPrice = useMemo(
-        () =>
-            items.reduce(
-                (sum, item) => sum + item.price * item.quantity,
-                0
-            ),
+        () => items.reduce((sum, item) => sum + item.price * item.quantity, 0),
         [items]
     );
 
+    const isPaymentFinal = ["approved", "expired", "rejected"].includes(paymentStatus);
+    const isOrderCreated = Boolean(activeOrderId);
 
-    function handleSubmit(event) {
-        event.preventDefault();
-        setMessage("");
+    // ── Message color ─────────────────────────────────────────────────────
+    const messageClass =
+        messageType === "error"
+            ? "rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+            : messageType === "success"
+                ? "rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-700"
+                : "rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800";
 
-        if (items.length === 0) {
-            setMessage("Keranjang masih kosong. Silakan pilih menu dahulu.");
-            return;
-        }
-
-        if (profileLoading) {
-            setMessage("Tunggu sampai profil customer selesai dimuat.");
-            return;
-        }
-
-        if (profileError || !customer) {
-            setMessage("Profil customer belum berhasil dimuat. Silakan login kembali.");
-            return;
-        }
-
-
-        if (fulfillmentMethod === "delivery" && !selectedAddress) {
-            setMessage("Pilih alamat pengiriman terlebih dahulu.");
-            return;
-        }
-
-        const checkoutData = {
-            // Hanya kirim ID produk dan jumlah dari frontend.
-            // Harga final akan divalidasi oleh backend.
-            items: items.map((item) => ({
-                product_id: item.product_id,
-                quantity: item.quantity,
-            })),
-            fulfillment_method: fulfillmentMethod,
-            address_id:
-                fulfillmentMethod === "delivery"
-                    ? selectedAddress.id
-                    : null,
-            recipient_name:
-                fulfillmentMethod === "delivery"
-                    ? selectedAddress.recipient_name
-                    : customer.name,
-            phone:
-                fulfillmentMethod === "delivery"
-                    ? selectedAddress.phone
-                    : customer.phone,
-            notes: notes.trim(),
-            payment_method: paymentMethod,
-        };
-
-        localStorage.setItem(
-            "ava_eats_checkout_draft",
-            JSON.stringify(checkoutData)
-        );
-
-        setMessage(
-            "Data checkout tersimpan. Pesanan belum dibuat di server."
-        );
-    }
-
-
+    // ─────────────────────────────────────────────────────────────────────
     if (loading) {
         return (
             <main className="checkout-page">
@@ -181,8 +323,6 @@ export default function CheckoutPage() {
             </main>
         );
     }
-
-
 
     return (
         <main className="checkout-page">
@@ -216,6 +356,7 @@ export default function CheckoutPage() {
             ) : (
                 <form className="checkout-content" onSubmit={handleSubmit}>
 
+                    {/* ── Step 1: Metode Penerimaan ── */}
                     <section className="checkout-card">
                         <div className="checkout-section-title">
                             <span className="step-number">1</span>
@@ -261,7 +402,6 @@ export default function CheckoutPage() {
                             </button>
                         </div>
 
-
                         {fulfillmentMethod === "pickup" && (
                             <div className="mt-4 rounded-xl border border-[#D5E2CF] bg-[#E4EBDD]/50 p-4">
                                 <div className="flex items-start gap-3">
@@ -302,125 +442,122 @@ export default function CheckoutPage() {
                                 </div>
                             </div>
                         )}
-
                     </section>
 
+                    {/* ── Delivery: Data Penerima & Alamat ── */}
                     {fulfillmentMethod === "delivery" && (
-                        <>
-                            <section className="rounded-2xl border border-[#E8D6CE] bg-white p-5">
-                                <h2 className="text-lg font-bold text-[#2A2620]">
-                                    Data Penerima
-                                </h2>
+                        <section className="rounded-2xl border border-[#E8D6CE] bg-white p-5">
+                            <h2 className="text-lg font-bold text-[#2A2620]">
+                                Data Penerima
+                            </h2>
 
-                                {profileLoading ? (
-                                    <p className="mt-3 text-sm text-[#6B6459]">
-                                        Memuat profil dan alamat...
-                                    </p>
-                                ) : profileError ? (
-                                    <div className="mt-3 space-y-3">
-                                        <p className="text-sm text-red-600">{profileError}</p>
+                            {profileLoading ? (
+                                <p className="mt-3 text-sm text-[#6B6459]">
+                                    Memuat profil dan alamat...
+                                </p>
+                            ) : profileError ? (
+                                <div className="mt-3 space-y-3">
+                                    <p className="text-sm text-red-600">{profileError}</p>
 
-                                        <button
-                                            type="button"
-                                            onClick={() => router.push("/login")}
-                                            className="rounded-xl bg-[#7A2E3A] px-4 py-2 text-sm font-semibold text-white"
-                                        >
-                                            Login kembali
-                                        </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => router.push("/login?redirect=/checkout")}
+                                        className="rounded-xl bg-[#7A2E3A] px-4 py-2 text-sm font-semibold text-white"
+                                    >
+                                        Login kembali
+                                    </button>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="mt-3 space-y-1 text-sm">
+                                        <p className="font-semibold text-[#2A2620]">
+                                            {customer?.name}
+                                        </p>
+                                        <p className="text-[#6B6459]">{customer?.phone}</p>
                                     </div>
-                                ) : (
-                                    <>
-                                        <div className="mt-3 space-y-1 text-sm">
-                                            <p className="font-semibold text-[#2A2620]">
-                                                {customer?.name}
-                                            </p>
-                                            <p className="text-[#6B6459]">{customer?.phone}</p>
-                                        </div>
 
-                                        <div className="mt-5">
-                                            <h3 className="mb-3 font-semibold text-[#2A2620]">
-                                                Pilih Alamat Pengiriman
-                                            </h3>
+                                    <div className="mt-5">
+                                        <h3 className="mb-3 font-semibold text-[#2A2620]">
+                                            Pilih Alamat Pengiriman
+                                        </h3>
 
-                                            {addresses.length === 0 ? (
-                                                <div className="space-y-3">
-                                                    <p className="text-sm text-[#6B6459]">
-                                                        Belum ada alamat tersimpan. Tambahkan alamat terlebih dahulu
-                                                        sebelum melanjutkan checkout.
-                                                    </p>
+                                        {addresses.length === 0 ? (
+                                            <div className="space-y-3">
+                                                <p className="text-sm text-[#6B6459]">
+                                                    Belum ada alamat tersimpan. Tambahkan alamat terlebih dahulu
+                                                    sebelum melanjutkan checkout.
+                                                </p>
 
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => router.push("/addresses/new")}
-                                                        className="rounded-xl bg-[#7A2E3A] px-4 py-3 text-sm font-semibold text-white"
+                                                <button
+                                                    type="button"
+                                                    onClick={() => router.push("/addresses/new")}
+                                                    className="rounded-xl bg-[#7A2E3A] px-4 py-3 text-sm font-semibold text-white"
+                                                >
+                                                    + Tambah Alamat
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-3">
+                                                {addresses.map((addr) => (
+                                                    <label
+                                                        key={addr.id}
+                                                        className={`block cursor-pointer rounded-xl border p-4 ${String(selectedAddressId) === String(addr.id)
+                                                            ? "border-[#7A2E3A] bg-[#F3E1DE]/40"
+                                                            : "border-[#E8D6CE]"
+                                                            }`}
                                                     >
-                                                        + Tambah Alamat
-                                                    </button>
-                                                </div>
-                                            ) : (
-                                                <div className="space-y-3">
-                                                    {addresses.map((address) => (
-                                                        <label
-                                                            key={address.id}
-                                                            className={`block cursor-pointer rounded-xl border p-4 ${String(selectedAddressId) === String(address.id)
-                                                                ? "border-[#7A2E3A] bg-[#F3E1DE]/40"
-                                                                : "border-[#E8D6CE]"
-                                                                }`}
-                                                        >
-                                                            <div className="flex items-start gap-3">
-                                                                <input
-                                                                    type="radio"
-                                                                    name="shipping_address"
-                                                                    value={address.id}
-                                                                    checked={
-                                                                        String(selectedAddressId) === String(address.id)
-                                                                    }
-                                                                    onChange={() =>
-                                                                        setSelectedAddressId(String(address.id))
-                                                                    }
-                                                                    className="mt-1 accent-[#7A2E3A]"
-                                                                />
+                                                        <div className="flex items-start gap-3">
+                                                            <input
+                                                                type="radio"
+                                                                name="shipping_address"
+                                                                value={addr.id}
+                                                                checked={
+                                                                    String(selectedAddressId) === String(addr.id)
+                                                                }
+                                                                onChange={() =>
+                                                                    setSelectedAddressId(String(addr.id))
+                                                                }
+                                                                className="mt-1 accent-[#7A2E3A]"
+                                                            />
 
-                                                                <div className="min-w-0 text-sm">
-                                                                    <div className="flex flex-wrap items-center gap-2">
-                                                                        <span className="font-semibold text-[#2A2620]">
-                                                                            {address.label || "Alamat"}
+                                                            <div className="min-w-0 text-sm">
+                                                                <div className="flex flex-wrap items-center gap-2">
+                                                                    <span className="font-semibold text-[#2A2620]">
+                                                                        {addr.label || "Alamat"}
+                                                                    </span>
+
+                                                                    {addr.is_default && (
+                                                                        <span className="rounded-full bg-[#6E8F63]/15 px-2 py-1 text-xs text-[#496442]">
+                                                                            Alamat utama
                                                                         </span>
-
-                                                                        {address.is_default && (
-                                                                            <span className="rounded-full bg-[#6E8F63]/15 px-2 py-1 text-xs text-[#496442]">
-                                                                                Alamat utama
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-
-                                                                    <p className="mt-2 font-medium text-[#2A2620]">
-                                                                        {address.recipient_name}
-                                                                    </p>
-                                                                    <p className="text-[#6B6459]">{address.phone}</p>
-
-                                                                    <p className="mt-1 leading-5 text-[#6B6459]">
-                                                                        {address.address}
-                                                                        {address.district ? `, ${address.district}` : ""}
-                                                                        {address.city ? `, ${address.city}` : ""}
-                                                                        {address.province ? `, ${address.province}` : ""}
-                                                                        {address.postal_code
-                                                                            ? ` ${address.postal_code}`
-                                                                            : ""}
-                                                                    </p>
+                                                                    )}
                                                                 </div>
+
+                                                                <p className="mt-2 font-medium text-[#2A2620]">
+                                                                    {addr.recipient_name}
+                                                                </p>
+                                                                <p className="text-[#6B6459]">{addr.phone}</p>
+
+                                                                <p className="mt-1 leading-5 text-[#6B6459]">
+                                                                    {addr.address}
+                                                                    {addr.district ? `, ${addr.district}` : ""}
+                                                                    {addr.city ? `, ${addr.city}` : ""}
+                                                                    {addr.province ? `, ${addr.province}` : ""}
+                                                                    {addr.postal_code ? ` ${addr.postal_code}` : ""}
+                                                                </p>
                                                             </div>
-                                                        </label>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </>
-                                )}
-                            </section>
-                        </>
+                                                        </div>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </>
+                            )}
+                        </section>
                     )}
 
+                    {/* ── Step 2: Metode Pembayaran ── */}
                     <section className="checkout-card">
                         <div className="checkout-section-title">
                             <span className="step-number">2</span>
@@ -431,15 +568,14 @@ export default function CheckoutPage() {
                         </div>
 
                         <label
-                            className={`payment-option ${paymentMethod === "qris" ? "selected" : ""
-                                }`}
+                            className={`payment-option ${paymentMethod === "qris" ? "selected" : ""}`}
                         >
                             <input
                                 type="radio"
                                 name="payment"
                                 value="qris"
                                 checked={paymentMethod === "qris"}
-                                onChange={(event) => setPaymentMethod(event.target.value)}
+                                onChange={(e) => setPaymentMethod(e.target.value)}
                             />
                             <span className="payment-icon">▦</span>
                             <span className="payment-copy">
@@ -452,15 +588,14 @@ export default function CheckoutPage() {
                         </label>
 
                         <label
-                            className={`payment-option ${paymentMethod === "bank_transfer" ? "selected" : ""
-                                }`}
+                            className={`payment-option ${paymentMethod === "bank_transfer" ? "selected" : ""}`}
                         >
                             <input
                                 type="radio"
                                 name="payment"
                                 value="bank_transfer"
                                 checked={paymentMethod === "bank_transfer"}
-                                onChange={(event) => setPaymentMethod(event.target.value)}
+                                onChange={(e) => setPaymentMethod(e.target.value)}
                             />
                             <span className="payment-icon">▤</span>
                             <span className="payment-copy">
@@ -471,13 +606,9 @@ export default function CheckoutPage() {
                                 {paymentMethod === "bank_transfer" ? "✓" : ""}
                             </span>
                         </label>
-
-                        <p className="payment-disclaimer">
-                            Pilihan ini masih berupa UI. QRIS dan detail rekening asli
-                            akan ditampilkan setelah integrasi pembayaran.
-                        </p>
                     </section>
 
+                    {/* ── Step 3: Catatan & Ringkasan Pesanan ── */}
                     <section className="checkout-card">
                         <div className="checkout-section-title">
                             <span className="step-number">3</span>
@@ -506,6 +637,24 @@ export default function CheckoutPage() {
                             ))}
                         </div>
 
+                        {/* Catatan pesanan */}
+                        <div className="mt-4">
+                            <label
+                                htmlFor="order-notes"
+                                className="mb-2 block text-sm font-medium text-[#2A2620]"
+                            >
+                                Catatan (opsional)
+                            </label>
+                            <textarea
+                                id="order-notes"
+                                value={notes}
+                                onChange={(e) => setNotes(e.target.value)}
+                                rows={2}
+                                placeholder="Contoh: Tidak pakai bawang, extra sambal..."
+                                className="w-full rounded-xl border border-[#E8D6CE] bg-white px-4 py-3 text-sm text-[#2A2620] outline-none focus:border-[#7A2E3A] focus:ring-1 focus:ring-[#7A2E3A]"
+                            />
+                        </div>
+
                         <div className="checkout-total-row">
                             <span>Total item</span>
                             <strong>{totalItems} item</strong>
@@ -517,23 +666,95 @@ export default function CheckoutPage() {
                         </div>
 
                         <p className="checkout-footnote">
-                            Ongkir belum termasuk dan akan mengikuti perhitungan
-                            pengiriman saat integrasi backend.
+                            Ongkir belum termasuk dan akan dihitung saat pengiriman.
                         </p>
                     </section>
 
+                    {/* ── Status messages ── */}
                     {message && (
-                        <div className="checkout-message" role="status">
+                        <div className={messageClass} role="status">
                             {message}
                         </div>
                     )}
 
-                    <button type="submit" className="checkout-submit">
-                        Simpan Data Checkout <span>→</span>
-                    </button>
+                    {/* ── Payment status banners ── */}
+                    {paymentStatus === "approved" && (
+                        <div className="rounded-xl border border-green-200 bg-green-50 p-4">
+                            <p className="font-semibold text-green-800">
+                                🎉 Pembayaran Berhasil!
+                            </p>
+                            <p className="mt-1 text-sm text-green-700">
+                                Pesananmu sedang diproses. Terima kasih Moms! 💚
+                            </p>
+                            <button
+                                type="button"
+                                onClick={() => router.push("/orders")}
+                                className="mt-3 inline-flex rounded-xl bg-green-700 px-4 py-2 text-sm font-semibold text-white hover:bg-green-800"
+                            >
+                                Lihat Pesanan →
+                            </button>
+                        </div>
+                    )}
+
+                    {paymentStatus === "pending" && isOrderCreated && !message && (
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                            <p className="font-semibold text-amber-800">
+                                Menunggu Pembayaran
+                            </p>
+                            <p className="mt-1 text-sm text-amber-700">
+                                Popup pembayaran telah dibuka. Selesaikan pembayaranmu di sana.
+                            </p>
+                        </div>
+                    )}
+
+                    {paymentStatus === "expired" && (
+                        <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+                            <p className="font-semibold text-red-800">
+                                Pembayaran Kedaluwarsa
+                            </p>
+                            <p className="mt-1 text-sm text-red-700">
+                                Waktu pembayaran habis. Silakan buat pesanan baru.
+                            </p>
+                        </div>
+                    )}
+
+                    {paymentStatus === "rejected" && (
+                        <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+                            <p className="font-semibold text-red-800">
+                                Pembayaran Gagal
+                            </p>
+                            <p className="mt-1 text-sm text-red-700">
+                                Pembayaran tidak berhasil. Coba lagi atau pilih metode lain.
+                            </p>
+                        </div>
+                    )}
+
+                    {/* ── Re-open Snap popup (after user closes it) ── */}
+                    {snapToken && paymentStatus === "pending" && (
+                        <button
+                            type="button"
+                            onClick={() => openSnapPopup(snapToken, activeOrderId)}
+                            className="block w-full rounded-full bg-[#702D3D] px-6 py-4 text-center font-semibold text-white transition hover:bg-[#5A2332]"
+                        >
+                            Lanjutkan Pembayaran →
+                        </button>
+                    )}
+
+                    {/* ── Submit button ── */}
+                    {!isOrderCreated && (
+                        <button
+                            type="submit"
+                            disabled={submitting || profileLoading}
+                            className="checkout-submit disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                            {submitting
+                                ? "Memproses..."
+                                : "Pesan & Bayar Sekarang →"}
+                        </button>
+                    )}
 
                     <p className="checkout-secure-note">
-                        🔒 Data ini sementara tersimpan di browser perangkatmu.
+                        🔒 Transaksimu diproses dengan aman melalui Midtrans.
                     </p>
                 </form>
             )}

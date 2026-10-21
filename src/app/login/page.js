@@ -1,13 +1,15 @@
-
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiRequest } from "@/lib/api";
 
-export default function LoginPage() {
+// ── Inner component that reads searchParams ───────────────────────────────────
+function LoginForm() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const redirectTo = searchParams.get("redirect") || "/checkout";
 
     const [phone, setPhone] = useState("");
     const [password, setPassword] = useState("");
@@ -48,8 +50,8 @@ export default function LoginPage() {
                 JSON.stringify(customer)
             );
 
-            // 4. Lanjut ke checkout
-            router.push("/checkout");
+            // 4. Redirect ke halaman asal (atau checkout)
+            router.push(redirectTo);
         } catch (err) {
             localStorage.removeItem("ava_eats_access_token");
             localStorage.removeItem("ava_eats_customer");
@@ -168,5 +170,18 @@ export default function LoginPage() {
                 </p>
             </div>
         </main>
+    );
+}
+
+// ── Page export — wraps form in Suspense for useSearchParams ─────────────────
+export default function LoginPage() {
+    return (
+        <Suspense fallback={
+            <main className="flex min-h-screen items-center justify-center bg-[#F8F3E9]">
+                <p className="text-sm text-[#6B6459]">Memuat halaman login...</p>
+            </main>
+        }>
+            <LoginForm />
+        </Suspense>
     );
 }
