@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { apiRequest } from "@/lib/api";
+import { apiRequest, getImageUrl } from "@/lib/api";
 
 const formatRupiah = (amount) =>
     new Intl.NumberFormat("id-ID", {
@@ -25,8 +25,11 @@ const formatDate = (value) => {
 };
 
 const ORDER_STATUS_LABELS = {
-    pending: "Menunggu diproses",
-    paid: "Sudah dibayar",
+    pending: "Menunggu Pembayaran",
+    paid: "Pembayaran Diterima",
+    processing: "Sedang Disiapkan",
+    delivered: "Dalam Pengiriman",
+    completed: "Selesai",
     done: "Selesai",
     cancelled: "Dibatalkan",
 };
@@ -37,6 +40,109 @@ const PAYMENT_STATUS_LABELS = {
     expired: "Pembayaran kedaluwarsa",
     rejected: "Pembayaran gagal",
 };
+
+function getOrderLifecycleInfo(order) {
+    const status = (order.status || "").toLowerCase();
+    const isDelivery = order.fulfillment_method === "delivery";
+
+    const steps = [
+        { label: "Bayar", icon: "💳" },
+        { label: "Diterima", icon: "📋" },
+        { label: "Disiapkan", icon: "📦" },
+        { label: isDelivery ? "Dikirim" : "Siap Ambil", icon: isDelivery ? "🛵" : "🛍️" },
+        { label: "Selesai", icon: "🎉" },
+    ];
+
+    if (status === "cancelled") {
+        const isRefundPending = order.refund_status === "refund_pending";
+        const isRefunded = order.refund_status === "refunded";
+
+        return {
+            isCancelled: true,
+            isRefundPending,
+            isRefunded,
+            currentStep: -1,
+            steps,
+            emoji: isRefunded ? "✓" : isRefundPending ? "💸" : "✕",
+            title: isRefunded
+                ? "Pesanan Dibatalkan — Refund Selesai"
+                : isRefundPending
+                ? "Pesanan Dibatalkan — Refund Diproses"
+                : "Pesanan Dibatalkan",
+            desc: isRefunded
+                ? `Dana telah berhasil dikembalikan ke rekening/e-wallet Anda. ${order.refund_note ? `Catatan: "${order.refund_note}"` : ""}`
+                : isRefundPending
+                ? `Pengembalian dana sebesar ${formatRupiah(order.grand_total || order.total_amount)} sedang diproses oleh admin Ava Eats.`
+                : (order.cancellation_reason ? `Alasan: "${order.cancellation_reason}"` : "Pesanan ini telah dibatalkan sebelum pembayaran."),
+            badgeBg: isRefunded
+                ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                : isRefundPending
+                ? "bg-amber-50 text-amber-800 border-amber-300"
+                : "bg-red-50 text-red-700 border-red-200",
+        };
+    }
+
+    if (status === "paid") {
+        return {
+            isCancelled: false,
+            currentStep: 1,
+            steps,
+            emoji: "📋",
+            title: "Pembayaran Berhasil! Pesanan Siap Dikemas",
+            desc: "Pesanan Moms sudah masuk antrean Ava Eats dan siap dikemas (frozen food & ice pack).",
+            badgeBg: "bg-amber-50 text-amber-800 border-amber-200",
+        };
+    }
+
+    if (status === "processing") {
+        return {
+            isCancelled: false,
+            currentStep: 2,
+            steps,
+            emoji: "📦",
+            title: "Pesanan Sedang Dikemas & Disiapkan",
+            desc: "Tim Ava Eats sedang menyiapkan produk frozen food & ice pack agar kualitas tetap terjaga prima.",
+            badgeBg: "bg-sky-50 text-sky-800 border-sky-200",
+        };
+    }
+
+    if (status === "delivered") {
+        return {
+            isCancelled: false,
+            currentStep: 3,
+            steps,
+            emoji: isDelivery ? "🛵" : "🛍️",
+            title: isDelivery ? "Pesanan Sedang Diantar Kurir" : "Pesanan Siap Diambil!",
+            desc: isDelivery
+                ? `Kurir ${(order.courier || "").toUpperCase()} sedang meluncur menuju alamat pengiriman Moms.`
+                : "Pesanan frozen food Moms sudah siap diambil di outlet Ava Eats.",
+            badgeBg: "bg-emerald-50 text-emerald-800 border-emerald-200",
+        };
+    }
+
+    if (status === "completed" || status === "done") {
+        return {
+            isCancelled: false,
+            currentStep: 4,
+            steps,
+            emoji: "🎉",
+            title: "Pesanan Selesai & Diterima",
+            desc: "Terima kasih sudah memesan di Ava Eats! Simpan di freezer atau hangatkan untuk dinikmati bersama keluarga.",
+            badgeBg: "bg-emerald-50 text-emerald-800 border-emerald-200",
+        };
+    }
+
+    // Default: pending
+    return {
+        isCancelled: false,
+        currentStep: 0,
+        steps,
+        emoji: "⏳",
+        title: "Menunggu Pembayaran",
+        desc: "Selesaikan pembayaran melalui QRIS/Transfer agar pesanan Moms dapat segera disiapkan.",
+        badgeBg: "bg-amber-50 text-amber-800 border-amber-200",
+    };
+}
 
 // ── Inline cancel confirmation ────────────────────────────────────────────────
 function CancelConfirmDialog({ orderCode, onConfirm, onDismiss, loading }) {
@@ -88,6 +194,16 @@ function OrdersContent() {
 
     // Track which pending orders need polling
     const pollingRef = useRef({});
+    const [copiedResi, setCopiedResi] = useState("");
+    const [customerPreviewProof, setCustomerPreviewProof] = useState("");
+
+    function handleCopyResi(resi) {
+        if (typeof navigator !== "undefined" && navigator.clipboard) {
+            navigator.clipboard.writeText(resi);
+            setCopiedResi(resi);
+            setTimeout(() => setCopiedResi(""), 2500);
+        }
+    }
 
     // ── Pagination state (5 orders per page) ─────────────────────────────
     const [currentPage, setCurrentPage] = useState(1);
@@ -305,20 +421,31 @@ function OrdersContent() {
     return (
         <main className="min-h-screen bg-[#FAF7F2] px-4 py-6 text-[#382629]">
             <div className="mx-auto max-w-[520px]">
-                <header className="mb-6">
-                    <Link
-                        href="/"
-                        className="text-sm font-medium text-[#80515A] hover:underline"
-                    >
-                        ← Kembali ke menu
-                    </Link>
+                <header className="mb-6 flex items-start justify-between">
+                    <div>
+                        <Link
+                            href="/"
+                            className="text-sm font-medium text-[#80515A] hover:underline"
+                        >
+                            ← Kembali ke menu
+                        </Link>
 
-                    <h1 className="mt-4 text-2xl font-bold">
-                        Pesanan Saya
-                    </h1>
-                    <p className="mt-1 text-sm text-[#78686A]">
-                        Pantau pesanan dan status pembayaranmu di sini.
-                    </p>
+                        <h1 className="mt-3 text-2xl font-bold text-[#2A2620]">
+                            Pesanan Saya
+                        </h1>
+                        <p className="mt-1 text-sm text-[#78686A]">
+                            Pantau proses penyiapan & pengiriman real-time.
+                        </p>
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={loadOrders}
+                        className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-[#E8D6CE] bg-white px-3 py-2 text-xs font-semibold text-[#7A3545] shadow-sm hover:bg-[#FAF7F2] transition"
+                        title="Segarkan status pesanan"
+                    >
+                        <span>↻</span> Refresh
+                    </button>
                 </header>
 
                 {error && (
@@ -373,6 +500,8 @@ function OrdersContent() {
                             const isPendingPayment =
                                 orderStatus === "pending" && paymentStatus === "pending";
 
+                            const lifecycle = getOrderLifecycleInfo(order);
+
                             return (
                                 <article
                                     key={order.id}
@@ -392,9 +521,160 @@ function OrdersContent() {
                                             </p>
                                         </div>
 
-                                        <span className="rounded-full bg-[#F5E8E8] px-3 py-1 text-xs font-semibold text-[#7A3545]">
-                                            {ORDER_STATUS_LABELS[orderStatus] || order.status}
+                                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                                            order.status === "cancelled" && order.refund_status === "refund_pending"
+                                                ? "bg-amber-100 text-amber-800 border border-amber-300"
+                                                : order.status === "cancelled" && order.refund_status === "refunded"
+                                                ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                                : "bg-[#F5E8E8] text-[#7A3545]"
+                                        }`}>
+                                            {order.status === "cancelled" && order.refund_status === "refund_pending"
+                                                ? "Batal (Refund Diproses)"
+                                                : order.status === "cancelled" && order.refund_status === "refunded"
+                                                ? "Batal (Refund Selesai)"
+                                                : (ORDER_STATUS_LABELS[orderStatus] || order.status)}
                                         </span>
+                                    </div>
+
+                                    {/* ── Order Lifecycle Stepper ── */}
+                                    <div className="mt-3.5 rounded-2xl border border-[#E8D6CE] bg-[#FAF7F2] p-3.5">
+                                        {!lifecycle.isCancelled ? (
+                                            <>
+                                                {/* Stepper bar */}
+                                                <div className="relative mb-3.5 px-2">
+                                                    <div className="absolute left-4 right-4 top-3 h-[2px] bg-[#E8DDD7]" />
+                                                    <div
+                                                        className="absolute left-4 top-3 h-[2px] bg-[#6E8F63] transition-all duration-500"
+                                                        style={{ width: `${(Math.min(lifecycle.currentStep, 4) / 4) * 100}%` }}
+                                                    />
+                                                    <div className="flex items-center justify-between relative z-10">
+                                                        {lifecycle.steps.map((st, i) => {
+                                                            const isDone = i < lifecycle.currentStep;
+                                                            const isCurrent = i === lifecycle.currentStep;
+                                                            return (
+                                                                <div key={i} className="flex flex-col items-center">
+                                                                    <div
+                                                                        className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold transition-all ${
+                                                                            isDone
+                                                                                ? "bg-[#6E8F63] text-white"
+                                                                                : isCurrent
+                                                                                ? "bg-[#7A2E3A] text-white ring-4 ring-[#7A2E3A]/20 animate-pulse"
+                                                                                : "bg-[#E8DDD7] text-[#8A7778]"
+                                                                        }`}
+                                                                    >
+                                                                        {isDone ? "✓" : st.icon}
+                                                                    </div>
+                                                                    <span
+                                                                        className={`mt-1.5 text-[9px] font-semibold text-center whitespace-nowrap ${
+                                                                            isCurrent
+                                                                                ? "text-[#7A2E3A] font-bold"
+                                                                                : isDone
+                                                                                ? "text-[#456044]"
+                                                                                : "text-[#A89F97]"
+                                                                        }`}
+                                                                    >
+                                                                        {st.label}
+                                                                    </span>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+
+                                                {/* Current Active Status Box */}
+                                                <div className="flex items-center gap-3 rounded-xl bg-white p-3 border border-[#EEE5DF] shadow-xs">
+                                                    <span className="text-2xl shrink-0">{lifecycle.emoji}</span>
+                                                    <div className="min-w-0 flex-1">
+                                                        <strong className="block text-xs font-bold text-[#2A2620]">
+                                                            {lifecycle.title}
+                                                        </strong>
+                                                        <p className="text-[11px] text-[#6B6459] leading-snug mt-0.5">
+                                                            {lifecycle.desc}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <div>
+                                                {order.refund_status === "refund_pending" ? (
+                                                    <div className="rounded-xl bg-amber-50 p-3.5 border border-amber-300">
+                                                        <div className="flex items-start gap-2.5">
+                                                            <span className="text-2xl shrink-0">💸</span>
+                                                            <div className="flex-1 min-w-0">
+                                                                <strong className="block text-xs font-bold text-amber-900">
+                                                                    Pesanan Dibatalkan — Refund Sedang Diproses
+                                                                </strong>
+                                                                {order.cancellation_reason && (
+                                                                    <p className="text-[11px] text-amber-800 mt-1">
+                                                                        Alasan: <span className="font-semibold">&ldquo;{order.cancellation_reason}&rdquo;</span>
+                                                                    </p>
+                                                                )}
+                                                                <p className="text-[11px] text-amber-700 mt-1">
+                                                                    Total dana <span className="font-bold">{formatRupiah(order.grand_total || order.total_amount)}</span> akan dikembalikan oleh admin Ava Eats ke nomor WhatsApp Anda ({order.phone}).
+                                                                </p>
+                                                                <a
+                                                                    href={`https://wa.me/6282213232456?text=${encodeURIComponent(
+                                                                        `Halo Admin Ava Eats, saya mau konfirmasi pengembalian dana (refund) untuk pesanan saya #${order.order_code} (Rp ${(order.grand_total || order.total_amount || 0).toLocaleString("id-ID")}).`
+                                                                    )}`}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-[#25D366] px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-[#20ba59] transition"
+                                                                >
+                                                                    <span>💬</span> Chat WhatsApp Admin Toko
+                                                                </a>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ) : order.refund_status === "refunded" ? (
+                                                    <div className="rounded-xl bg-emerald-50 p-3.5 border border-emerald-300">
+                                                        <div className="flex items-start gap-2.5">
+                                                            <span className="text-2xl shrink-0">✓</span>
+                                                            <div className="flex-1 min-w-0">
+                                                                <strong className="block text-xs font-bold text-emerald-900">
+                                                                    Pengembalian Dana (Refund) Selesai
+                                                                </strong>
+                                                                <p className="text-[11px] text-emerald-800 mt-1">
+                                                                    Dana sebesar <span className="font-bold">{formatRupiah(order.grand_total || order.total_amount)}</span> telah berhasil ditransfer kembali ke rekening/e-wallet Anda.
+                                                                </p>
+                                                                {order.refund_note && (
+                                                                    <p className="text-[11px] text-emerald-700 italic mt-0.5">
+                                                                        Catatan: &ldquo;{order.refund_note}&rdquo;
+                                                                    </p>
+                                                                )}
+                                                                {order.cancellation_reason && (
+                                                                    <p className="text-[10px] text-[#8A7778] mt-1">
+                                                                        Alasan Batal: &ldquo;{order.cancellation_reason}&rdquo;
+                                                                    </p>
+                                                                )}
+                                                                {order.refund_proof_url && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setCustomerPreviewProof(order.refund_proof_url)}
+                                                                        className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-emerald-800 shadow-xs hover:bg-emerald-50 transition"
+                                                                    >
+                                                                        <span>🧾</span> Lihat Bukti Transfer Refund
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center gap-2.5 rounded-xl bg-red-50 p-3 border border-red-200">
+                                                        <span className="text-xl shrink-0">✕</span>
+                                                        <div>
+                                                            <strong className="block text-xs font-bold text-red-800">
+                                                                Pesanan Dibatalkan
+                                                            </strong>
+                                                            <p className="text-[11px] text-red-600 mt-0.5">
+                                                                {order.cancellation_reason
+                                                                    ? `Alasan: "${order.cancellation_reason}"`
+                                                                    : "Pesanan ini dibatalkan sebelum pembayaran selesai."}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
 
                                     <div className="my-4 border-t border-dashed border-[#E8DDD7]" />
@@ -428,10 +708,14 @@ function OrdersContent() {
                                         <span className="text-[#78686A]">
                                             {order.fulfillment_method === "pickup"
                                                 ? "Ambil di tempat"
-                                                : "Pengiriman"}
+                                                : order.courier
+                                                    ? `Pengiriman (${order.courier.toUpperCase()}${order.courier_service ? ` ${order.courier_service.toUpperCase()}` : ""})`
+                                                    : "Pengiriman"}
                                         </span>
                                         <span className="font-medium">
-                                            {formatRupiah(order.shipping_cost)}
+                                            {order.fulfillment_method === "pickup"
+                                                ? "Gratis"
+                                                : formatRupiah(order.shipping_cost)}
                                         </span>
                                     </div>
 
@@ -457,6 +741,128 @@ function OrdersContent() {
                                             </p>
                                         </div>
                                     </div>
+
+                                    {/* ── Status Pelacakan Pengiriman (Tracking) ── */}
+                                    {order.fulfillment_method === "delivery" && order.courier && (
+                                        <div className="mt-4 rounded-xl border border-[#E8D6CE] bg-[#FAF7F2] p-3.5">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-xs font-semibold uppercase tracking-wider text-[#78686A]">
+                                                    Info Pengiriman
+                                                </span>
+                                                <span className="rounded bg-[#EAE2DC] px-2 py-0.5 text-[11px] font-bold text-[#5A4E4D]">
+                                                    {order.courier.toUpperCase()}{order.courier_service ? ` • ${order.courier_service.toUpperCase()}` : ""}
+                                                </span>
+                                            </div>
+
+                                            {/* Kurir Ekspedisi (Paxel) -> No. Resi */}
+                                            {(order.courier.toLowerCase() === "paxel" || (!["gojek", "grab", "lalamove"].includes(order.courier.toLowerCase()))) && (
+                                                <div className="mt-2.5">
+                                                    {order.tracking_number ? (
+                                                        <div>
+                                                            <p className="text-xs text-[#78686A]">Nomor Resi Pengiriman:</p>
+                                                            <div className="mt-1 flex items-center justify-between rounded-lg border border-[#E0D3CC] bg-white px-3 py-2">
+                                                                <code className="font-mono text-sm font-bold text-[#2A2620]">
+                                                                    {order.tracking_number}
+                                                                </code>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleCopyResi(order.tracking_number)}
+                                                                    className="rounded bg-[#F3E1DE] px-2.5 py-1 text-xs font-semibold text-[#7A2E3A] hover:bg-[#EBD2CD] transition"
+                                                                >
+                                                                    {copiedResi === order.tracking_number ? "✓ Tersalin" : "Salin"}
+                                                                </button>
+                                                            </div>
+                                                            {order.tracking_url && (
+                                                                <a
+                                                                    href={order.tracking_url}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="mt-2.5 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#6E8F63] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#58764F]"
+                                                                >
+                                                                    📦 Lacak Paket Paxel ↗
+                                                                </a>
+                                                            )}
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-xs text-[#78686A]">
+                                                            <p>
+                                                                {order.status === "paid" || order.status === "processing"
+                                                                    ? "⏳ Pesanan sedang disiapkan. Resi Paxel akan otomatis muncul saat kurir menjemput paket."
+                                                                    : "Resi akan terbit setelah pembayaran berhasil dikonfirmasi."}
+                                                            </p>
+                                                            <button
+                                                                type="button"
+                                                                onClick={async () => {
+                                                                    try {
+                                                                        await apiRequest(`/shipping/simulate/${order.id}`, { method: "POST" });
+                                                                        loadOrders();
+                                                                    } catch (e) {
+                                                                        alert("Simulasi gagal: " + e.message);
+                                                                    }
+                                                                }}
+                                                                className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-[#D5C2B8] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#7A3545] shadow-xs hover:bg-[#FAF7F2] transition"
+                                                            >
+                                                                🧪 Simulasi Resi Paxel (Demo)
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {/* Kurir Instan (Gojek / Grab / Lalamove) -> Info Driver & Live Map */}
+                                            {["gojek", "grab", "lalamove"].includes(order.courier.toLowerCase()) && (
+                                                <div className="mt-2.5 space-y-2">
+                                                    {order.driver_name ? (
+                                                        <div className="rounded-lg border border-[#E0D3CC] bg-white p-2.5 text-xs">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-base">🛵</span>
+                                                                <div>
+                                                                    <p className="font-bold text-[#2A2620]">{order.driver_name}</p>
+                                                                    <p className="text-[#78686A]">
+                                                                        {order.driver_plate_number || "Roda dua (motor)"}
+                                                                        {order.driver_phone ? ` • Telp: ${order.driver_phone}` : ""}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-xs text-[#78686A]">
+                                                            <p>
+                                                                {order.status === "paid" || order.status === "processing"
+                                                                    ? "⏳ Dapur sedang menyiapkan makanan. Driver instan akan dipanggil sesaat sebelum pesanan siap diantar."
+                                                                    : "Driver instan akan dialokasikan setelah pembayaran dikonfirmasi."}
+                                                            </p>
+                                                            <button
+                                                                type="button"
+                                                                onClick={async () => {
+                                                                    try {
+                                                                        await apiRequest(`/shipping/simulate/${order.id}`, { method: "POST" });
+                                                                        loadOrders();
+                                                                    } catch (e) {
+                                                                        alert("Simulasi gagal: " + e.message);
+                                                                    }
+                                                                }}
+                                                                className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-[#D5C2B8] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#7A3545] shadow-xs hover:bg-[#FAF7F2] transition"
+                                                            >
+                                                                🧪 Simulasi Driver Instan (Demo)
+                                                            </button>
+                                                        </div>
+                                                    )}
+
+                                                    {order.tracking_url ? (
+                                                        <a
+                                                            href={order.tracking_url}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#7A3545] px-3.5 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[#642835]"
+                                                        >
+                                                            📍 Pantau Lokasi Driver Live (Peta) ↗
+                                                        </a>
+                                                    ) : null}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
 
                                     {/* ── Retry payment ── */}
                                     {canRetryPayment && (
@@ -557,6 +963,44 @@ function OrdersContent() {
                     Muat Ulang Pesanan
                 </button>
             </div>
+
+            {/* ── Lightbox Modal for Customer Refund Proof ── */}
+            {customerPreviewProof && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div
+                        className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+                        onClick={() => setCustomerPreviewProof("")}
+                    />
+                    <div className="relative z-10 max-w-md w-full rounded-2xl border border-[#E8D6CE] bg-white p-4 shadow-2xl">
+                        <div className="flex items-center justify-between border-b border-[#EEE5DF] pb-2 mb-3">
+                            <span className="text-sm font-bold text-[#2A2620]">Bukti Transfer Refund</span>
+                            <button
+                                type="button"
+                                onClick={() => setCustomerPreviewProof("")}
+                                className="text-xs text-[#8A7778] hover:text-[#2A2620] font-bold"
+                            >
+                                ✕ Tutup
+                            </button>
+                        </div>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                            src={getImageUrl(customerPreviewProof)}
+                            alt="Bukti Transfer Refund"
+                            className="max-h-[70vh] w-full rounded-xl object-contain bg-stone-100"
+                        />
+                        <div className="mt-3 text-center">
+                            <a
+                                href={getImageUrl(customerPreviewProof)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-[#7A3545] underline font-semibold"
+                            >
+                                Buka gambar di tab baru ↗
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            )}
         </main>
     );
 }

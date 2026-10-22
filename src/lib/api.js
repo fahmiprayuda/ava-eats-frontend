@@ -2,6 +2,22 @@ const API_BASE_URL =
     process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api";
 
 /**
+ * Mengubah path relatif gambar (misal: /uploads/refunds/...) menjadi URL lengkap ke backend.
+ */
+export function getImageUrl(path) {
+    if (!path || typeof path !== "string") return "";
+    if (
+        path.startsWith("http://") ||
+        path.startsWith("https://") ||
+        path.startsWith("data:")
+    ) {
+        return path;
+    }
+    const backendRoot = API_BASE_URL.replace(/\/api\/?$/, "");
+    return `${backendRoot}${path.startsWith("/") ? "" : "/"}${path}`;
+}
+
+/**
  * Cek apakah JWT token sudah kedaluwarsa berdasarkan field 'exp' di payload.
  */
 export function isTokenExpired(token) {
@@ -50,13 +66,17 @@ export function handleSessionExpired(customRedirect) {
 }
 
 export async function apiRequest(path, options = {}) {
-    let token =
-        typeof window !== "undefined"
-            ? localStorage.getItem("ava_eats_access_token")
-            : null;
+    let token = null;
+    if (typeof window !== "undefined") {
+        if (options.useAdminToken || path.startsWith("/admins")) {
+            token = localStorage.getItem("ava_eats_admin_token");
+        } else {
+            token = localStorage.getItem("ava_eats_access_token");
+        }
+    }
 
     // Jika token sudah expired secara lokal sebelum request dikirim
-    if (token && isTokenExpired(token)) {
+    if (token && isTokenExpired(token) && !path.startsWith("/admins")) {
         token = null;
         if (typeof window !== "undefined") {
             localStorage.removeItem("ava_eats_access_token");
@@ -78,9 +98,12 @@ export async function apiRequest(path, options = {}) {
         }
     }
 
+    const isFormData =
+        typeof FormData !== "undefined" && options.body instanceof FormData;
+
     const headers = {
         Accept: "application/json",
-        ...(options.body ? { "Content-Type": "application/json" } : {}),
+        ...(options.body && !isFormData ? { "Content-Type": "application/json" } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...options.headers,
     };
@@ -94,8 +117,17 @@ export async function apiRequest(path, options = {}) {
 
     if (!response.ok) {
         // Tangani 401 Unauthorized dari server (token expired / invalid)
-        if (response.status === 401 && path !== "/customers/login") {
-            handleSessionExpired();
+        if (response.status === 401 && path !== "/customers/login" && path !== "/auth/login") {
+            if (path.startsWith("/admins") || options.useAdminToken) {
+                if (typeof window !== "undefined") {
+                    localStorage.removeItem("ava_eats_admin_token");
+                    localStorage.removeItem("ava_eats_admin_user");
+                    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+                    window.location.href = "/admin/login?expired=1";
+                }
+            } else {
+                handleSessionExpired();
+            }
         }
 
         const message =

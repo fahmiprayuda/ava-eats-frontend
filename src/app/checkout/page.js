@@ -37,6 +37,12 @@ export default function CheckoutPage() {
     const [paymentMethod, setPaymentMethod] = useState("qris");
     const [fulfillmentMethod, setFulfillmentMethod] = useState("delivery");
 
+    // ── shipping / courier state ──────────────────────────────────────────
+    const [shippingRates, setShippingRates] = useState([]);
+    const [shippingLoading, setShippingLoading] = useState(false);
+    const [shippingError, setShippingError] = useState("");
+    const [selectedCourierKey, setSelectedCourierKey] = useState("");
+
     // ── checkout state ────────────────────────────────────────────────────
     const [submitting, setSubmitting] = useState(false);
     const [message, setMessage] = useState("");
@@ -120,6 +126,74 @@ export default function CheckoutPage() {
         loadCustomerData();
         return () => { cancelled = true; };
     }, [router]);
+
+    // ── Fetch shipping rates when delivery & address selected ─────────────
+    useEffect(() => {
+        if (
+            fulfillmentMethod !== "delivery" ||
+            !selectedAddressId ||
+            items.length === 0
+        ) {
+            const timer = setTimeout(() => {
+                setShippingRates([]);
+                setSelectedCourierKey("");
+                setShippingError("");
+            }, 0);
+            return () => clearTimeout(timer);
+        }
+
+        let cancelled = false;
+
+        async function fetchShippingRates() {
+            try {
+                setShippingLoading(true);
+                setShippingError("");
+
+                const result = await apiRequest("/shipping/rates", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        address_id: Number(selectedAddressId),
+                        items: items.map((it) => ({
+                            product_id: it.product_id,
+                            quantity: it.quantity,
+                        })),
+                    }),
+                });
+
+                if (cancelled) return;
+
+                const rates = result.pricing || [];
+                setShippingRates(rates);
+
+                if (rates.length > 0) {
+                    setSelectedCourierKey((prev) => {
+                        const exists = rates.some(
+                            (r) => `${r.courier_code}:${r.courier_service_code}` === prev
+                        );
+                        if (exists) return prev;
+                        return `${rates[0].courier_code}:${rates[0].courier_service_code}`;
+                    });
+                } else {
+                    setSelectedCourierKey("");
+                    setShippingError("Tidak ada layanan kurir yang tersedia untuk alamat ini.");
+                }
+            } catch (err) {
+                if (!cancelled) {
+                    setShippingError(err.message || "Gagal memuat pilihan kurir.");
+                    setShippingRates([]);
+                    setSelectedCourierKey("");
+                }
+            } finally {
+                if (!cancelled) setShippingLoading(false);
+            }
+        }
+
+        fetchShippingRates();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [fulfillmentMethod, selectedAddressId, items]);
 
     // ── Payment status polling (after order created) ──────────────────────
     useEffect(() => {
@@ -229,10 +303,22 @@ export default function CheckoutPage() {
             return;
         }
 
-        if (fulfillmentMethod === "delivery" && !selectedAddress) {
-            setMessage("Pilih alamat pengiriman terlebih dahulu.");
-            setMessageType("error");
-            return;
+        if (fulfillmentMethod === "delivery") {
+            if (!selectedAddress) {
+                setMessage("Pilih alamat pengiriman terlebih dahulu.");
+                setMessageType("error");
+                return;
+            }
+            if (shippingLoading) {
+                setMessage("Sedang menghitung tarif pengiriman. Harap tunggu sebentar.");
+                setMessageType("info");
+                return;
+            }
+            if (!selectedRate) {
+                setMessage("Pilih layanan kurir pengiriman terlebih dahulu.");
+                setMessageType("error");
+                return;
+            }
         }
 
         try {
@@ -253,6 +339,15 @@ export default function CheckoutPage() {
                     })),
                     notes: notes.trim() || null,
                     payment_method: paymentMethod,
+                    courier_code:
+                        fulfillmentMethod === "delivery" && selectedRate
+                            ? selectedRate.courier_code
+                            : null,
+                    service_code:
+                        fulfillmentMethod === "delivery" && selectedRate
+                            ? selectedRate.courier_service_code
+                            : null,
+                    shipping_cost: shippingCost,
                 }),
             });
 
@@ -316,6 +411,22 @@ export default function CheckoutPage() {
     }
 
     // ── Derived ───────────────────────────────────────────────────────────
+    const selectedRate = useMemo(() => {
+        if (!selectedCourierKey) return null;
+        return (
+            shippingRates.find(
+                (r) =>
+                    `${r.courier_code}:${r.courier_service_code}` ===
+                    selectedCourierKey
+            ) || null
+        );
+    }, [shippingRates, selectedCourierKey]);
+
+    const shippingCost = useMemo(() => {
+        if (fulfillmentMethod !== "delivery" || !selectedRate) return 0;
+        return Number(selectedRate.price) || 0;
+    }, [fulfillmentMethod, selectedRate]);
+
     const totalItems = useMemo(
         () => items.reduce((sum, item) => sum + item.quantity, 0),
         [items]
@@ -324,6 +435,11 @@ export default function CheckoutPage() {
     const totalPrice = useMemo(
         () => items.reduce((sum, item) => sum + item.price * item.quantity, 0),
         [items]
+    );
+
+    const grandTotal = useMemo(
+        () => totalPrice + shippingCost,
+        [totalPrice, shippingCost]
     );
 
     const isPaymentFinal = ["approved", "expired", "rejected"].includes(paymentStatus);
@@ -499,9 +615,18 @@ export default function CheckoutPage() {
                                     </div>
 
                                     <div className="mt-5">
-                                        <h3 className="mb-3 font-semibold text-[#2A2620]">
-                                            Pilih Alamat Pengiriman
-                                        </h3>
+                                        <div className="mb-3 flex items-center justify-between">
+                                            <h3 className="font-semibold text-[#2A2620]">
+                                                Pilih Alamat Pengiriman
+                                            </h3>
+                                            <button
+                                                type="button"
+                                                onClick={() => router.push("/addresses?redirect=/checkout")}
+                                                className="text-xs font-semibold text-[#7A2E3A] hover:underline"
+                                            >
+                                                + Tambah / Kelola Alamat
+                                            </button>
+                                        </div>
 
                                         {addresses.length === 0 ? (
                                             <div className="space-y-3">
@@ -512,7 +637,7 @@ export default function CheckoutPage() {
 
                                                 <button
                                                     type="button"
-                                                    onClick={() => router.push("/addresses/new")}
+                                                    onClick={() => router.push("/addresses?action=new&redirect=/checkout")}
                                                     className="rounded-xl bg-[#7A2E3A] px-4 py-3 text-sm font-semibold text-white"
                                                 >
                                                     + Tambah Alamat
@@ -573,6 +698,124 @@ export default function CheckoutPage() {
                                                 ))}
                                             </div>
                                         )}
+
+                                        {/* ── Pilihan Kurir & Ongkir ── */}
+                                        <div className="mt-6 border-t border-[#E8D6CE] pt-5">
+                                            <div className="mb-3 flex items-center justify-between">
+                                                <h3 className="font-semibold text-[#2A2620]">
+                                                    Pilih Layanan Pengiriman
+                                                </h3>
+                                                {selectedRate && (
+                                                    <span className="rounded-full bg-[#E4EBDD] px-2.5 py-0.5 text-xs font-semibold text-[#496442]">
+                                                        Ongkir: {formatRupiah(selectedRate.price)}
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {shippingLoading ? (
+                                                <div className="rounded-xl border border-[#E8D6CE] bg-[#FAF7F2] p-5 text-center">
+                                                    <div className="mx-auto mb-2 h-5 w-5 animate-spin rounded-full border-2 border-[#7A2E3A] border-t-transparent" />
+                                                    <p className="text-sm font-medium text-[#2A2620]">
+                                                        Menghitung tarif ongkos kirim...
+                                                    </p>
+                                                    <p className="mt-0.5 text-xs text-[#78686A]">
+                                                        Mengambil data kurir (Paxel, Gojek, Grab, Lalamove)
+                                                    </p>
+                                                </div>
+                                            ) : shippingError ? (
+                                                <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+                                                    <p className="text-sm font-medium text-red-700">{shippingError}</p>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setSelectedCourierKey("");
+                                                            setShippingLoading(true);
+                                                            setShippingError("");
+                                                            apiRequest("/shipping/rates", {
+                                                                method: "POST",
+                                                                body: JSON.stringify({
+                                                                    address_id: Number(selectedAddressId),
+                                                                    items: items.map((it) => ({
+                                                                        product_id: it.product_id,
+                                                                        quantity: it.quantity,
+                                                                    })),
+                                                                }),
+                                                            })
+                                                                .then((res) => {
+                                                                    const rates = res.pricing || [];
+                                                                    setShippingRates(rates);
+                                                                    if (rates.length > 0) {
+                                                                        setSelectedCourierKey(
+                                                                            `${rates[0].courier_code}:${rates[0].courier_service_code}`
+                                                                        );
+                                                                    }
+                                                                })
+                                                                .catch((e) => setShippingError(e.message || "Gagal memuat tarif kurir."))
+                                                                .finally(() => setShippingLoading(false));
+                                                        }}
+                                                        className="mt-2 text-xs font-semibold text-[#7A2E3A] underline"
+                                                    >
+                                                        Coba lagi
+                                                    </button>
+                                                </div>
+                                            ) : shippingRates.length === 0 ? (
+                                                <p className="text-sm text-[#78686A]">
+                                                    Pilih alamat pengiriman terlebih dahulu untuk melihat opsi kurir.
+                                                </p>
+                                            ) : (
+                                                <div className="space-y-2.5">
+                                                    {shippingRates.map((rate) => {
+                                                        const key = `${rate.courier_code}:${rate.courier_service_code}`;
+                                                        const isSelected = selectedCourierKey === key;
+                                                        return (
+                                                            <label
+                                                                key={key}
+                                                                className={`flex cursor-pointer items-center justify-between rounded-xl border p-3.5 transition ${
+                                                                    isSelected
+                                                                        ? "border-[#7A2E3A] bg-[#F3E1DE]/40 shadow-sm"
+                                                                        : "border-[#E8D6CE] bg-white hover:bg-[#FAF7F2]"
+                                                                }`}
+                                                            >
+                                                                <div className="flex min-w-0 items-center gap-3">
+                                                                    <input
+                                                                        type="radio"
+                                                                        name="courier_option"
+                                                                        value={key}
+                                                                        checked={isSelected}
+                                                                        onChange={() => setSelectedCourierKey(key)}
+                                                                        className="h-4 w-4 accent-[#7A2E3A]"
+                                                                    />
+                                                                    <div className="min-w-0">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <strong className="text-sm font-semibold text-[#2A2620]">
+                                                                                {rate.courier_name}
+                                                                            </strong>
+                                                                            <span className="rounded bg-[#EAE2DC] px-2 py-0.5 text-xs font-medium text-[#5A4E4D]">
+                                                                                {rate.courier_service_name}
+                                                                            </span>
+                                                                        </div>
+                                                                        <p className="mt-0.5 truncate text-xs text-[#78686A]">
+                                                                            {rate.description || `Estimasi tiba: ${rate.duration || "1-2 hari"}`}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="shrink-0 pl-3 text-right">
+                                                                    <strong className="text-sm font-bold text-[#7A2E3A]">
+                                                                        {formatRupiah(rate.price)}
+                                                                    </strong>
+                                                                    {rate.duration && (
+                                                                        <span className="block text-[11px] text-[#A08E8B]">
+                                                                            {rate.duration}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </label>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </>
                             )}
@@ -692,13 +935,35 @@ export default function CheckoutPage() {
                             <strong>{totalItems} item</strong>
                         </div>
 
-                        <div className="checkout-total-row grand-total">
-                            <span>Total sementara</span>
+                        <div className="checkout-total-row">
+                            <span>Subtotal produk</span>
                             <strong>{formatRupiah(totalPrice)}</strong>
                         </div>
 
+                        <div className="checkout-total-row">
+                            <span>Ongkos kirim</span>
+                            <strong>
+                                {fulfillmentMethod === "pickup" ? (
+                                    <span className="font-semibold text-[#496442]">Gratis (Pickup)</span>
+                                ) : shippingLoading ? (
+                                    <span className="text-xs text-[#78686A]">Menghitung...</span>
+                                ) : selectedRate ? (
+                                    formatRupiah(selectedRate.price)
+                                ) : (
+                                    <span className="text-xs text-[#A08E8B]">Pilih kurir</span>
+                                )}
+                            </strong>
+                        </div>
+
+                        <div className="checkout-total-row grand-total">
+                            <span>Total Pembayaran</span>
+                            <strong>{formatRupiah(grandTotal)}</strong>
+                        </div>
+
                         <p className="checkout-footnote">
-                            Ongkir belum termasuk dan akan dihitung saat pengiriman.
+                            {fulfillmentMethod === "delivery" && selectedRate
+                                ? `Sudah termasuk ongkir ${selectedRate.courier_name} (${selectedRate.courier_service_name}). Transaksi diproses aman via Midtrans.`
+                                : "Pesanan siap diambil di lokasi outlet setelah pembayaran terkonfirmasi."}
                         </p>
                     </section>
 

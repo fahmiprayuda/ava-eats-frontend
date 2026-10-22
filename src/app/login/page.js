@@ -198,6 +198,18 @@ function LoginForm() {
                     </button>
                 </form>
 
+                <div className="mt-6 rounded-2xl border border-[#E8D6CE] bg-[#FAF7F2] p-4 text-center">
+                    <p className="text-sm text-[#6B6459]">
+                        Belum punya akun Ava Eats?
+                    </p>
+                    <Link
+                        href={redirectTo && redirectTo !== "/" ? `/register?redirect=${encodeURIComponent(redirectTo)}` : "/register"}
+                        className="mt-1.5 inline-block text-sm font-bold text-[#7A2E3A] hover:underline"
+                    >
+                        Daftar Akun Baru Sekarang →
+                    </Link>
+                </div>
+
                 <p className="mt-6 text-center text-xs leading-5 text-[#6B6459]">
                     Dengan login, lo bisa melanjutkan pemesanan menggunakan profil
                     dan alamat pengiriman customer.

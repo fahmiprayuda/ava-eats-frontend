@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { apiRequest, isTokenExpired } from "@/lib/api";
+import { apiRequest, isTokenExpired, getImageUrl } from "@/lib/api";
 
 // Metadata tampilan sementara karena field ini belum tersedia di API.
 const productUiMetadata = {
@@ -423,7 +423,16 @@ export default function Home() {
               return (
                 <article className="product-card" key={product.id}>
                   <div className="product-image">
-                    <span className="food-emoji">{product.emoji}</span>
+                    {product.image ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={getImageUrl(product.image)}
+                        alt={product.name}
+                        className="h-full w-full object-cover transition-transform duration-300 hover:scale-105"
+                      />
+                    ) : (
+                      <span className="food-emoji">{product.emoji}</span>
+                    )}
 
                     {product.popular && (
                       <span className="popular-badge">★ Favorit</span>
@@ -585,8 +594,17 @@ export default function Home() {
             <div className="cart-list">
               {cartItems.map((product) => (
                 <div className="cart-item" key={product.id}>
-                  <div className="cart-item-emoji">
-                    {product.emoji}
+                  <div className="cart-item-emoji overflow-hidden flex items-center justify-center">
+                    {product.image ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={getImageUrl(product.image)}
+                        alt={product.name}
+                        className="h-full w-full object-cover rounded-lg"
+                      />
+                    ) : (
+                      product.emoji
+                    )}
                   </div>
 
                   <div className="cart-item-info">
@@ -700,61 +718,128 @@ export default function Home() {
             {/* Profile / Login Card */}
             <div className="mb-4 rounded-2xl border border-[#E8D6CE] bg-[#FAF7F2] p-4">
               {customer ? (
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#7A2E3A] text-base font-bold text-white">
-                      {customer.name ? customer.name.charAt(0).toUpperCase() : "M"}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <strong className="truncate text-sm text-[#2A2620]">
-                          {customer.name}
-                        </strong>
-                        <span className="shrink-0 rounded-full bg-[#6E8F63]/15 px-2 py-0.5 text-[10px] font-semibold text-[#496442]">
-                          Member
-                        </span>
+                <div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#7A2E3A] text-base font-bold text-white">
+                        {customer.name ? customer.name.charAt(0).toUpperCase() : "M"}
                       </div>
-                      <p className="truncate text-xs text-[#6B6459]">{customer.phone}</p>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <strong className="truncate text-sm text-[#2A2620]">
+                            {customer.name}
+                          </strong>
+                          <span className="shrink-0 rounded-full bg-[#6E8F63]/15 px-2 py-0.5 text-[10px] font-semibold text-[#496442]">
+                            Member
+                          </span>
+                        </div>
+                        <p className="truncate text-xs text-[#6B6459]">{customer.phone}</p>
+                      </div>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="shrink-0 rounded-lg border border-[#E4D5D5] px-2.5 py-1 text-xs font-semibold text-[#7A2E3A] transition hover:bg-white"
+                    >
+                      Logout
+                    </button>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={handleLogout}
-                    className="shrink-0 rounded-lg border border-[#E4D5D5] px-2.5 py-1 text-xs font-semibold text-[#7A2E3A] transition hover:bg-white"
-                  >
-                    Logout
-                  </button>
+                  <div className="mt-3 pt-3 border-t border-[#E8D6CE]/60">
+                    <Link
+                      href="/profile"
+                      onClick={() => setMenuOpen(false)}
+                      className="flex items-center justify-center gap-1.5 w-full rounded-xl border border-[#E8D6CE] bg-white py-2 text-xs font-semibold text-[#7A2E3A] shadow-sm transition hover:bg-[#FAF7F2]"
+                    >
+                      <span>✏️</span> Edit Informasi Profil
+                    </Link>
+                  </div>
                 </div>
               ) : (
                 <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#E8D6CE] text-lg">
                       👤
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <strong className="block text-sm text-[#2A2620]">
                         Halo, Moms! 👋
                       </strong>
-                      <span className="text-xs text-[#6B6459]">
+                      <span className="block truncate text-xs text-[#6B6459]">
                         Masuk untuk kelola pesanan & alamat
                       </span>
                     </div>
                   </div>
 
-                  <Link
-                    href="/login"
-                    onClick={() => setMenuOpen(false)}
-                    className="shrink-0 rounded-xl bg-[#7A2E3A] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#64252F]"
-                  >
-                    Masuk
-                  </Link>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Link
+                      href="/login"
+                      onClick={() => setMenuOpen(false)}
+                      className="rounded-xl bg-[#7A2E3A] px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-[#64252F]"
+                    >
+                      Masuk
+                    </Link>
+                    <Link
+                      href="/register"
+                      onClick={() => setMenuOpen(false)}
+                      className="rounded-xl border border-[#7A2E3A] bg-white px-3 py-2 text-xs font-semibold text-[#7A2E3A] transition hover:bg-[#FAF7F2]"
+                    >
+                      Daftar
+                    </Link>
+                  </div>
                 </div>
               )}
             </div>
 
             {/* Navigation List */}
             <nav className="space-y-2">
+              {customer && (
+                <>
+                  <Link
+                    href="/profile"
+                    onClick={() => setMenuOpen(false)}
+                    className="flex items-center justify-between rounded-xl border border-[#EEE5DF] bg-white p-3.5 transition hover:bg-[#FAF7F2]"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#FAF0E6] text-lg">
+                        👤
+                      </span>
+                      <div>
+                        <strong className="block text-sm text-[#2A2620]">
+                          Profil Saya
+                        </strong>
+                        <span className="text-xs text-[#78686A]">
+                          Ubah nama, WhatsApp, & kata sandi
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-base font-bold text-[#80515A]">→</span>
+                  </Link>
+
+                  <Link
+                    href="/addresses"
+                    onClick={() => setMenuOpen(false)}
+                    className="flex items-center justify-between rounded-xl border border-[#EEE5DF] bg-white p-3.5 transition hover:bg-[#FAF7F2]"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#FAF0E6] text-lg">
+                        📍
+                      </span>
+                      <div>
+                        <strong className="block text-sm text-[#2A2620]">
+                          Alamat Pengiriman
+                        </strong>
+                        <span className="text-xs text-[#78686A]">
+                          Kelola alamat rumah, kantor, & titik GPS
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-base font-bold text-[#80515A]">→</span>
+                  </Link>
+                </>
+              )}
+
               <Link
                 href="/orders"
                 onClick={() => setMenuOpen(false)}
@@ -902,6 +987,13 @@ export default function Home() {
               <p className="text-[11px] text-[#A08E8B]">
                 Ava Eats • Homemade With Love for Your Little One
               </p>
+              <Link
+                href="/admin/login"
+                onClick={() => setMenuOpen(false)}
+                className="mt-2 inline-block text-[11px] font-medium text-[#7A2E3A] hover:underline"
+              >
+                🛡️ Staff & Admin Portal
+              </Link>
             </div>
           </section>
         </div>
