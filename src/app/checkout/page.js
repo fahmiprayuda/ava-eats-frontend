@@ -470,7 +470,9 @@ export default function CheckoutPage() {
                 </Link>
 
                 <div className="checkout-brand">
-                    <div className="checkout-logo">A</div>
+                    <div className="checkout-logo">
+                        <img src="/logo.png" alt="Ava Eats Logo" />
+                    </div>
                     <div>
                         <p className="eyebrow">AVA EATS</p>
                         <h1>Checkout</h1>
@@ -842,10 +844,10 @@ export default function CheckoutPage() {
                                 checked={paymentMethod === "qris"}
                                 onChange={(e) => setPaymentMethod(e.target.value)}
                             />
-                            <span className="payment-icon">▦</span>
+                            <span className="payment-icon">📱</span>
                             <span className="payment-copy">
-                                <strong>QRIS</strong>
-                                <small>Scan kode QR untuk membayar</small>
+                                <strong>QRIS & E-Wallet</strong>
+                                <small>Scan QR via BCA, Livin, GoPay, ShopeePay, OVO dll</small>
                             </span>
                             <span className="payment-check">
                                 {paymentMethod === "qris" ? "✓" : ""}
@@ -862,10 +864,10 @@ export default function CheckoutPage() {
                                 checked={paymentMethod === "bank_transfer"}
                                 onChange={(e) => setPaymentMethod(e.target.value)}
                             />
-                            <span className="payment-icon">▤</span>
+                            <span className="payment-icon">🏦</span>
                             <span className="payment-copy">
-                                <strong>Transfer Bank</strong>
-                                <small>Transfer ke rekening yang tersedia</small>
+                                <strong>Transfer Bank (Virtual Account)</strong>
+                                <small>BCA, Mandiri Bill, BNI, BRI, Permata (Otomatis & Real-time via m-Banking)</small>
                             </span>
                             <span className="payment-check">
                                 {paymentMethod === "bank_transfer" ? "✓" : ""}

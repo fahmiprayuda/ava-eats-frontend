@@ -39,7 +39,7 @@ function AdminLoginForm() {
             localStorage.setItem("ava_eats_admin_token", result.access_token);
             localStorage.setItem(
                 "ava_eats_admin_user",
-                JSON.stringify({ username: username.trim() })
+                JSON.stringify(result.admin || { username: username.trim(), role: "admin" })
             );
 
             setSuccessMsg(`Login berhasil! Mengalihkan ke Dashboard Admin... 🚀`);
@@ -60,8 +60,8 @@ function AdminLoginForm() {
             <div className="w-full max-w-[420px]">
                 {/* Brand Header */}
                 <div className="text-center mb-8">
-                    <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#7A2E3A] text-3xl shadow-lg shadow-[#7A2E3A]/40">
-                        🛡️
+                    <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl bg-white p-1 shadow-lg shadow-[#7A2E3A]/40 ring-2 ring-[#E8A598]/40">
+                        <img src="/logo.png" alt="Ava Eats Admin" className="h-full w-full object-cover rounded-xl" />
                     </div>
                     <span className="rounded-full bg-[#7A2E3A]/40 px-3 py-1 text-[11px] font-bold tracking-widest text-[#E8A598] uppercase">
                         Internal Portal

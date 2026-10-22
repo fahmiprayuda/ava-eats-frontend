@@ -15,6 +15,14 @@ const geistMono = Geist_Mono({
 export const metadata = {
   title: "AVA EATS",
   description: "Ava Eats is a food delivery service that connects customers with local restaurants and food vendors. Our mission is to provide a convenient and reliable platform for ordering delicious meals from your favorite eateries.",
+  icons: {
+    icon: [
+      { url: "/favicon.png", sizes: "64x64", type: "image/png" },
+      { url: "/logo.png", sizes: "512x512", type: "image/png" },
+    ],
+    shortcut: "/favicon.ico",
+    apple: "/logo.png",
+  },
 };
 
 const MIDTRANS_SNAP_URL =

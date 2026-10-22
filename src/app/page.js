@@ -283,7 +283,9 @@ export default function Home() {
 
       <header className="brand-header">
         <div className="brand-top">
-          <div className="brand-logo">A</div>
+          <div className="brand-logo">
+            <img src="/logo.png" alt="Ava Eats Logo" />
+          </div>
 
           <div className="brand-info">
             <p className="brand-eyebrow">HOMEMADE WITH LOVE</p>
@@ -439,7 +441,7 @@ export default function Home() {
                     )}
 
                     {!product.available && (
-                      <span className="unavailable-badge">Habis</span>
+                      <span className="unavailable-badge">Tidak Tersedia</span>
                     )}
                   </div>
 
@@ -502,7 +504,7 @@ export default function Home() {
                           </div>
                         )
                       ) : (
-                        <span className="sold-out">Habis</span>
+                        <span className="sold-out">Tidak Tersedia</span>
                       )}
                     </div>
                   </div>
@@ -534,7 +536,9 @@ export default function Home() {
       </section>
 
       <footer className="page-footer">
-        <div className="footer-mark">A</div>
+        <div className="footer-mark">
+          <img src="/logo.png" alt="Ava Eats Logo" />
+        </div>
         <p>Made with love by Ava Eats</p>
       </footer>
 

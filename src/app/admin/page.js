@@ -9,7 +9,7 @@ export default function AdminDashboardPage() {
     const router = useRouter();
     const fileInputRef = useRef(null);
 
-    const [adminUser] = useState(() => {
+    const [adminUser, setAdminUser] = useState(() => {
         if (typeof window === "undefined") return null;
         try {
             const userStr = localStorage.getItem("ava_eats_admin_user");
@@ -52,6 +52,39 @@ export default function AdminDashboardPage() {
     const [auditTotal, setAuditTotal] = useState(0);
     const [auditLoading, setAuditLoading] = useState(false);
     const [auditSearch, setAuditSearch] = useState("");
+    const auditSearchRef = useRef(auditSearch);
+    auditSearchRef.current = auditSearch;
+
+    // User Management state
+    const [userSubTab, setUserSubTab] = useState("admins"); // "admins" | "customers"
+    const [adminList, setAdminList] = useState([]);
+    const [adminsLoading, setAdminsLoading] = useState(false);
+    const [customerList, setCustomerList] = useState([]);
+    const [customersLoading, setCustomersLoading] = useState(false);
+    const [customerSearch, setCustomerSearch] = useState("");
+    const customerSearchRef = useRef(customerSearch);
+    customerSearchRef.current = customerSearch;
+
+    // Admin Modal State
+    const [showAdminModal, setShowAdminModal] = useState(false);
+    const [editingAdmin, setEditingAdmin] = useState(null);
+    const [adminFormUsername, setAdminFormUsername] = useState("");
+    const [adminFormName, setAdminFormName] = useState("");
+    const [adminFormRole, setAdminFormRole] = useState("admin");
+    const [adminFormPassword, setAdminFormPassword] = useState("");
+    const [savingAdmin, setSavingAdmin] = useState(false);
+
+    // Customer Modal State
+    const [showCustomerModal, setShowCustomerModal] = useState(false);
+    const [editingCustomer, setEditingCustomer] = useState(null);
+    const [customerFormName, setCustomerFormName] = useState("");
+    const [customerFormPhone, setCustomerFormPhone] = useState("");
+    const [customerFormPassword, setCustomerFormPassword] = useState("");
+    const [savingCustomer, setSavingCustomer] = useState(false);
+
+    // Auto Refresh state (10 detik)
+    const [autoRefresh, setAutoRefresh] = useState(true);
+    const [refreshCounter, setRefreshCounter] = useState(10);
 
     // Cancellation & Refund Modal states
     const [cancelModalOrder, setCancelModalOrder] = useState(null);
@@ -116,6 +149,33 @@ export default function AdminDashboardPage() {
         }
     }, []);
 
+    const fetchAdmins = useCallback(async () => {
+        setAdminsLoading(true);
+        try {
+            const data = await apiRequest("/admins", { useAdminToken: true });
+            setAdminList(Array.isArray(data) ? data : []);
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setAdminsLoading(false);
+        }
+    }, []);
+
+    const fetchCustomers = useCallback(async (searchQuery = "") => {
+        setCustomersLoading(true);
+        try {
+            const query = searchQuery.trim()
+                ? `?search=${encodeURIComponent(searchQuery.trim())}`
+                : "";
+            const data = await apiRequest(`/customers${query}`, { useAdminToken: true });
+            setCustomerList(Array.isArray(data) ? data : []);
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setCustomersLoading(false);
+        }
+    }, []);
+
     useEffect(() => {
         const token = localStorage.getItem("ava_eats_admin_token");
 
@@ -124,15 +184,64 @@ export default function AdminDashboardPage() {
             return;
         }
 
+        // Ambil profil admin terkini untuk selalu mendapatkan Nama Lengkap & Role terupdate
+        apiRequest("/admins/me", { useAdminToken: true })
+            .then((me) => {
+                if (me && me.name) {
+                    setAdminUser(me);
+                    localStorage.setItem("ava_eats_admin_user", JSON.stringify(me));
+                }
+            })
+            .catch(() => { });
+
         const timer = setTimeout(() => {
             setLoading(false);
             fetchOrders();
             fetchProducts();
             fetchAuditTrails();
+            if (adminUser?.role !== "staff") {
+                fetchAdmins();
+                fetchCustomers();
+            }
         }, 0);
 
         return () => clearTimeout(timer);
-    }, [router, fetchOrders, fetchProducts, fetchAuditTrails]);
+    }, [router, fetchOrders, fetchProducts, fetchAuditTrails, fetchAdmins, fetchCustomers, adminUser?.role]);
+
+    // Jika akun adalah staff, pastikan tidak bisa berada di tab User Management
+    useEffect(() => {
+        if (adminUser?.role === "staff" && activeTab === "users") {
+            setActiveTab("orders");
+        }
+    }, [adminUser?.role, activeTab]);
+
+    // ── Live Auto Refresh /10 detik ──────────────────────────────────────────
+    useEffect(() => {
+        if (!autoRefresh) return;
+
+        const countdownInterval = setInterval(() => {
+            setRefreshCounter((prev) => {
+                if (prev <= 1) {
+                    // Waktu habis: refresh data secara seamless di background
+                    fetchOrders();
+                    fetchProducts();
+                    if (!auditSearchRef.current) {
+                        fetchAuditTrails();
+                    }
+                    if (adminUser?.role !== "staff") {
+                        fetchAdmins();
+                        if (!customerSearchRef.current) {
+                            fetchCustomers();
+                        }
+                    }
+                    return 10;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+
+        return () => clearInterval(countdownInterval);
+    }, [autoRefresh, fetchOrders, fetchProducts, fetchAuditTrails, fetchAdmins, fetchCustomers, adminUser?.role]);
 
     function handleLogout() {
         localStorage.removeItem("ava_eats_admin_token");
@@ -485,6 +594,173 @@ export default function AdminDashboardPage() {
         }
     }
 
+    // ── User Management (Admin & Customer) Handlers ──────────────────────────
+    function openAddAdminModal() {
+        setEditingAdmin(null);
+        setAdminFormUsername("");
+        setAdminFormName("");
+        setAdminFormRole("admin");
+        setAdminFormPassword("");
+        setShowAdminModal(true);
+    }
+
+    function openEditAdminModal(adm) {
+        setEditingAdmin(adm);
+        setAdminFormUsername(adm.username);
+        setAdminFormName(adm.name);
+        setAdminFormRole(adm.role || "admin");
+        setAdminFormPassword("");
+        setShowAdminModal(true);
+    }
+
+    async function handleSaveAdmin(e) {
+        e.preventDefault();
+        setSavingAdmin(true);
+        setErrorMsg("");
+
+        try {
+            if (editingAdmin) {
+                const payload = {
+                    username: adminFormUsername.trim(),
+                    name: adminFormName.trim(),
+                    role: adminFormRole,
+                };
+                if (adminFormPassword.trim()) {
+                    payload.password = adminFormPassword.trim();
+                }
+
+                await apiRequest(`/admins/${editingAdmin.id}`, {
+                    method: "PUT",
+                    useAdminToken: true,
+                    body: JSON.stringify(payload),
+                });
+                showToast(`Data admin '${adminFormUsername}' berhasil diperbarui! 👤`);
+            } else {
+                if (!adminFormPassword || adminFormPassword.length < 6) {
+                    alert("Password minimal 6 karakter.");
+                    setSavingAdmin(false);
+                    return;
+                }
+                await apiRequest("/admins", {
+                    method: "POST",
+                    useAdminToken: true,
+                    body: JSON.stringify({
+                        username: adminFormUsername.trim(),
+                        name: adminFormName.trim(),
+                        role: adminFormRole,
+                        password: adminFormPassword.trim(),
+                    }),
+                });
+                showToast(`Admin baru '${adminFormUsername}' berhasil dibuat! 🎉`);
+            }
+
+            setShowAdminModal(false);
+            fetchAdmins();
+            fetchAuditTrails();
+        } catch (err) {
+            alert(err.message || "Gagal menyimpan data admin.");
+        } finally {
+            setSavingAdmin(false);
+        }
+    }
+
+    async function handleDeleteAdmin(adminId, username) {
+        if (!confirm(`Yakin ingin menghapus akun admin '${username}'?`)) return;
+
+        try {
+            await apiRequest(`/admins/${adminId}`, {
+                method: "DELETE",
+                useAdminToken: true,
+            });
+            showToast(`Admin '${username}' berhasil dihapus.`);
+            fetchAdmins();
+            fetchAuditTrails();
+        } catch (err) {
+            alert(err.message || "Gagal menghapus admin.");
+        }
+    }
+
+    // Customer Handlers
+    function openAddCustomerModal() {
+        setEditingCustomer(null);
+        setCustomerFormName("");
+        setCustomerFormPhone("");
+        setCustomerFormPassword("");
+        setShowCustomerModal(true);
+    }
+
+    function openEditCustomerModal(cust) {
+        setEditingCustomer(cust);
+        setCustomerFormName(cust.name);
+        setCustomerFormPhone(cust.phone);
+        setCustomerFormPassword("");
+        setShowCustomerModal(true);
+    }
+
+    async function handleSaveCustomer(e) {
+        e.preventDefault();
+        setSavingCustomer(true);
+        setErrorMsg("");
+
+        try {
+            if (editingCustomer) {
+                const payload = {
+                    name: customerFormName.trim(),
+                    phone: customerFormPhone.trim(),
+                };
+                if (customerFormPassword.trim()) {
+                    payload.password = customerFormPassword.trim();
+                }
+                await apiRequest(`/customers/admin/${editingCustomer.id}`, {
+                    method: "PUT",
+                    useAdminToken: true,
+                    body: JSON.stringify(payload),
+                });
+                showToast(`Data pelanggan '${customerFormName}' berhasil diperbarui! 👤`);
+            } else {
+                if (!customerFormPassword || customerFormPassword.length < 6) {
+                    alert("Password minimal 6 karakter.");
+                    setSavingCustomer(false);
+                    return;
+                }
+                await apiRequest("/customers/admin", {
+                    method: "POST",
+                    useAdminToken: true,
+                    body: JSON.stringify({
+                        name: customerFormName.trim(),
+                        phone: customerFormPhone.trim(),
+                        password: customerFormPassword.trim(),
+                    }),
+                });
+                showToast(`Pelanggan baru '${customerFormName}' berhasil ditambahkan! 🎉`);
+            }
+
+            setShowCustomerModal(false);
+            fetchCustomers();
+            fetchAuditTrails();
+        } catch (err) {
+            alert(err.message || "Gagal menyimpan data pelanggan.");
+        } finally {
+            setSavingCustomer(false);
+        }
+    }
+
+    async function handleDeleteCustomer(customerId, name) {
+        if (!confirm(`Yakin ingin menghapus akun pelanggan '${name}'?`)) return;
+
+        try {
+            await apiRequest(`/customers/admin/${customerId}`, {
+                method: "DELETE",
+                useAdminToken: true,
+            });
+            showToast(`Pelanggan '${name}' berhasil dihapus.`);
+            fetchCustomers();
+            fetchAuditTrails();
+        } catch (err) {
+            alert(err.message || "Gagal menghapus pelanggan.");
+        }
+    }
+
     if (loading) {
         return (
             <main className="flex min-h-screen items-center justify-center bg-[#191415] text-white">
@@ -498,6 +774,8 @@ export default function AdminDashboardPage() {
     ).length;
 
     const unprocessedOrdersCount = orders.filter((o) => o.status === "paid").length;
+    const processingOrdersCount = orders.filter((o) => o.status === "processing").length;
+    const deliveredOrdersCount = orders.filter((o) => o.status === "delivered" || o.status === "shipped").length;
 
     const filteredOrders = orders.filter((o) => {
         if (orderFilter === "all") return true;
@@ -518,8 +796,8 @@ export default function AdminDashboardPage() {
             <header className="sticky top-0 z-40 border-b border-[#2E2527] bg-[#221B1D]/95 backdrop-blur-md px-3.5 py-3">
                 <div className="mx-auto flex max-w-7xl items-center justify-between">
                     <div className="flex items-center gap-2.5">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#7A2E3A] text-lg font-bold text-white shadow-sm">
-                            🛡️
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-white/20">
+                            <img src="/logo.png" alt="Ava Eats Admin" className="h-full w-full object-cover" />
                         </div>
                         <div className="min-w-0">
                             <span className="block text-[9px] sm:text-[10px] font-bold uppercase tracking-widest text-[#E8A598] truncate">
@@ -532,6 +810,28 @@ export default function AdminDashboardPage() {
                     </div>
 
                     <div className="flex items-center gap-2">
+                        {/* Auto Refresh 10s Indicator & Manual Sync Button */}
+                        <button
+                            type="button"
+                            onClick={() => {
+                                fetchOrders();
+                                fetchProducts();
+                                fetchAuditTrails();
+                                fetchAdmins();
+                                fetchCustomers();
+                                setRefreshCounter(10);
+                                showToast("Data dashboard berhasil di-refresh! 🔄");
+                            }}
+                            title="Auto-refresh setiap 10 detik. Klik untuk sync sekarang."
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-[#3E3234] bg-[#2A2123] px-2.5 py-1.5 text-xs font-semibold text-[#D1C7BD] hover:bg-[#342A2C] hover:text-white transition"
+                        >
+                            <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                            </span>
+                            <span className="text-[11px] font-mono font-bold text-emerald-400">Sync: {refreshCounter}s</span>
+                        </button>
+
                         <Link
                             href="/"
                             target="_blank"
@@ -541,9 +841,17 @@ export default function AdminDashboardPage() {
                         </Link>
                         <div className="flex items-center gap-1.5 rounded-xl bg-[#2E2527] px-2.5 py-1.5">
                             <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                            <span className="text-xs font-medium text-white max-w-[80px] sm:max-w-none truncate">
-                                {adminUser?.username || "Admin"}
+                            <span className="text-xs font-bold text-white max-w-[130px] sm:max-w-none truncate">
+                                {adminUser?.name || "Admin"}
                             </span>
+                            {adminUser?.role && (
+                                <span className={`hidden sm:inline-block rounded-md px-1.5 py-0.5 text-[9px] font-bold ${adminUser.role === "admin"
+                                    ? "bg-[#7A2E3A]/60 text-[#E8A598]"
+                                    : "bg-sky-500/20 text-sky-300"
+                                    }`}>
+                                    {adminUser.role === "admin" ? "Super Admin" : "Staff"}
+                                </span>
+                            )}
                         </div>
                         <button
                             type="button"
@@ -652,7 +960,7 @@ export default function AdminDashboardPage() {
                             : "bg-[#251E20] text-[#A89F97] hover:bg-[#2E2527] hover:text-white"
                             }`}
                     >
-                        🍱 Menu & Stok ({products.length})
+                        🍱 Menu & Stok
                     </button>
                     <button
                         type="button"
@@ -662,8 +970,20 @@ export default function AdminDashboardPage() {
                             : "bg-[#251E20] text-[#A89F97] hover:bg-[#2E2527] hover:text-white"
                             }`}
                     >
-                        📜 Audit Trail ({auditTotal})
+                        📜 Audit Trail
                     </button>
+                    {adminUser?.role !== "staff" && (
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab("users")}
+                            className={`shrink-0 rounded-xl px-3.5 py-2 text-xs font-bold transition ${activeTab === "users"
+                                ? "bg-[#7A2E3A] text-white shadow-md shadow-[#7A2E3A]/40"
+                                : "bg-[#251E20] text-[#A89F97] hover:bg-[#2E2527] hover:text-white"
+                                }`}
+                        >
+                            👥 User Management
+                        </button>
+                    )}
                 </div>
 
                 {/* ── TAB 1: ORDERS ─────────────────────────────────────────── */}
@@ -673,25 +993,30 @@ export default function AdminDashboardPage() {
                             {[
                                 { id: "all", label: "Semua" },
                                 ...(pendingRefundCount > 0
-                                    ? [{ id: "refund", label: `⚠️ Perlu Refund (${pendingRefundCount})` }]
+                                    ? [{ id: "refund", label: "Perlu Refund", count: pendingRefundCount, countBadge: "bg-red-500 text-white" }]
                                     : []),
-                                { id: "paid", label: "Perlu Disiapkan" },
-                                { id: "processing", label: "Sedang Disiapkan" },
-                                { id: "delivered", label: "Dikirim / Siap Ambil" },
-                                { id: "completed", label: "Selesai" },
+                                { id: "paid", label: "Perlu Disiapkan", count: unprocessedOrdersCount, countBadge: "bg-amber-400 text-[#191415]" },
+                                { id: "processing", label: "Sedang Disiapkan", count: processingOrdersCount, countBadge: "bg-sky-400 text-[#191415]" },
+                                { id: "delivered", label: "Dikirim / Siap Ambil", count: deliveredOrdersCount, countBadge: "bg-emerald-400 text-[#191415]" },
                                 { id: "pending", label: "Menunggu Bayar" },
                                 { id: "cancelled", label: "Batal" },
+                                { id: "completed", label: "Selesai" },
                             ].map((f) => (
                                 <button
                                     key={f.id}
                                     type="button"
                                     onClick={() => setOrderFilter(f.id)}
-                                    className={`shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${orderFilter === f.id
-                                        ? "bg-white text-[#191415]"
-                                        : "bg-[#261F21] text-[#9E938C] hover:bg-[#342A2C]"
+                                    className={`shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold transition inline-flex items-center gap-1.5 ${orderFilter === f.id
+                                        ? "bg-white text-[#191415] font-bold shadow-xs"
+                                        : "bg-[#261F21] text-[#9E938C] hover:bg-[#342A2C] hover:text-white"
                                         }`}
                                 >
-                                    {f.label}
+                                    <span>{f.id === "refund" ? `⚠️ ${f.label}` : f.label}</span>
+                                    {f.count > 0 && (
+                                        <span className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${f.countBadge || "bg-amber-400 text-black"}`}>
+                                            {f.count}
+                                        </span>
+                                    )}
                                 </button>
                             ))}
                         </div>
@@ -994,7 +1319,7 @@ export default function AdminDashboardPage() {
                                                             : "bg-red-500/20 text-red-300"
                                                             }`}
                                                     >
-                                                        {prod.is_available && prod.stock > 0 ? "Ready" : "Habis"}
+                                                        {prod.is_available && prod.stock > 0 ? "Tersedia" : "Tidak Tersedia"}
                                                     </span>
                                                 </div>
 
@@ -1104,7 +1429,7 @@ export default function AdminDashboardPage() {
                                                         : "bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-900/60"
                                                         }`}
                                                 >
-                                                    {prod.is_available ? "Set Habis" : "Set Ready"}
+                                                    {prod.is_available ? "Set Tidak Tersedia" : "Set Tersedia"}
                                                 </button>
                                             </div>
                                         </div>
@@ -1190,6 +1515,258 @@ export default function AdminDashboardPage() {
                                         </div>
                                     ))}
                                 </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* ── TAB 4: USER MANAGEMENT (ADMIN & CUSTOMER) ─────────────── */}
+                {activeTab === "users" && adminUser?.role !== "staff" && (
+                    <div className="space-y-4">
+                        {/* Sub-tab Switcher: Admins vs Customers */}
+                        <div className="flex items-center justify-between flex-wrap gap-3 border-b border-[#2E2527] pb-3">
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setUserSubTab("admins")}
+                                    className={`rounded-xl px-3.5 py-1.5 text-xs font-bold transition flex items-center gap-1.5 ${userSubTab === "admins"
+                                        ? "bg-[#7A2E3A] text-white shadow-sm"
+                                        : "bg-[#251E20] text-[#A89F97] hover:bg-[#2E2527] hover:text-white"
+                                        }`}
+                                >
+                                    <span>🛡️ Admin & Staff</span>
+                                    <span className="rounded-full bg-white/20 px-1.5 py-0.2 text-[10px]">
+                                        {adminList.length}
+                                    </span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setUserSubTab("customers")}
+                                    className={`rounded-xl px-3.5 py-1.5 text-xs font-bold transition flex items-center gap-1.5 ${userSubTab === "customers"
+                                        ? "bg-[#7A2E3A] text-white shadow-sm"
+                                        : "bg-[#251E20] text-[#A89F97] hover:bg-[#2E2527] hover:text-white"
+                                        }`}
+                                >
+                                    <span>👤 Pelanggan / Customer</span>
+                                    <span className="rounded-full bg-white/20 px-1.5 py-0.2 text-[10px]">
+                                        {customerList.length}
+                                    </span>
+                                </button>
+                            </div>
+
+                            {userSubTab === "admins" ? (
+                                adminUser?.role !== "staff" ? (
+                                    <button
+                                        type="button"
+                                        onClick={openAddAdminModal}
+                                        className="rounded-xl bg-[#7A2E3A] px-3.5 py-2 text-xs font-bold text-white shadow-md shadow-[#7A2E3A]/40 transition hover:bg-[#64252F] flex items-center gap-1.5"
+                                    >
+                                        <span>+</span> Tambah Admin / Staff
+                                    </button>
+                                ) : null
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={openAddCustomerModal}
+                                    className="rounded-xl bg-[#7A2E3A] px-3.5 py-2 text-xs font-bold text-white shadow-md shadow-[#7A2E3A]/40 transition hover:bg-[#64252F] flex items-center gap-1.5"
+                                >
+                                    <span>+</span> Tambah Pelanggan
+                                </button>
+                            )}
+                        </div>
+
+                        {/* ── SUBTAB 1: ADMIN & STAFF ── */}
+                        {userSubTab === "admins" && (
+                            <div className="space-y-3">
+                                {adminsLoading && adminList.length === 0 ? (
+                                    <div className="rounded-2xl border border-[#2E2527] bg-[#221B1D] p-8 text-center text-xs text-[#A89F97]">
+                                        Memuat data admin & staff...
+                                    </div>
+                                ) : adminList.length === 0 ? (
+                                    <div className="rounded-2xl border border-[#2E2527] bg-[#221B1D] p-8 text-center text-xs text-[#A89F97]">
+                                        Belum ada admin terdaftar.
+                                    </div>
+                                ) : (
+                                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                        {adminList.map((adm) => {
+                                            const isSelf = adminUser?.username === adm.username || adminUser?.id === adm.id;
+                                            return (
+                                                <div
+                                                    key={adm.id}
+                                                    className="rounded-2xl border border-[#2E2527] bg-[#221B1D] p-4 transition hover:border-[#3E3234] flex flex-col justify-between gap-3"
+                                                >
+                                                    <div className="flex items-start justify-between gap-2">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#7A2E3A]/30 text-base font-bold text-[#E8A598] ring-1 ring-[#7A2E3A]/50">
+                                                                {adm.role === "admin" ? "🛡️" : "👤"}
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <h4 className="font-bold text-sm text-white truncate">
+                                                                    {adm.name || adm.username}
+                                                                </h4>
+                                                                <p className="text-xs text-[#A89F97] truncate">
+                                                                    @{adm.username}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+
+                                                        <span
+                                                            className={`shrink-0 rounded-lg px-2 py-0.5 text-[10px] font-bold ${adm.role === "admin"
+                                                                ? "bg-[#7A2E3A]/40 text-[#E8A598] border border-[#7A2E3A]/60"
+                                                                : "bg-sky-500/20 text-sky-300 border border-sky-500/30"
+                                                                }`}
+                                                        >
+                                                            {adm.role === "admin" ? "Super Admin" : "Staff"}
+                                                        </span>
+                                                    </div>
+
+                                                    <div className="pt-2 border-t border-[#2E2527] flex items-center justify-between text-[11px] text-[#A89F97]">
+                                                        <span>
+                                                            {isSelf ? (
+                                                                <strong className="text-emerald-400">● Akun Anda</strong>
+                                                            ) : (
+                                                                <span>ID: #{adm.id}</span>
+                                                            )}
+                                                        </span>
+
+                                                        <div className="flex items-center gap-1.5">
+                                                            {adminUser?.role !== "staff" && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => openEditAdminModal(adm)}
+                                                                    className="rounded-lg border border-[#3E3234] px-2.5 py-1 text-xs font-semibold text-[#D1C7BD] hover:bg-[#2E2527] transition"
+                                                                >
+                                                                    ✏️ Edit
+                                                                </button>
+                                                            )}
+                                                            {!isSelf && adminUser?.role !== "staff" && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleDeleteAdmin(adm.id, adm.username)}
+                                                                    className="rounded-lg border border-red-500/30 px-2 py-1 text-xs font-semibold text-red-400 hover:bg-red-950/40 transition"
+                                                                    title="Hapus Admin"
+                                                                >
+                                                                    Hapus
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* ── SUBTAB 2: CUSTOMERS ── */}
+                        {userSubTab === "customers" && (
+                            <div className="space-y-3">
+                                {/* Search Bar Pelanggan */}
+                                <div className="relative max-w-md">
+                                    <input
+                                        type="text"
+                                        value={customerSearch}
+                                        onChange={(e) => {
+                                            setCustomerSearch(e.target.value);
+                                            fetchCustomers(e.target.value);
+                                        }}
+                                        placeholder="Cari nama atau nomor WhatsApp pelanggan..."
+                                        className="w-full rounded-xl border border-[#3E3234] bg-[#221B1D] px-3.5 py-2 pl-9 text-xs text-white placeholder-[#78686A] focus:border-[#7A2E3A] focus:outline-none"
+                                    />
+                                    <span className="absolute left-3 top-2.5 text-xs text-[#78686A]">
+                                        🔍
+                                    </span>
+                                </div>
+
+                                {customersLoading && customerList.length === 0 ? (
+                                    <div className="rounded-2xl border border-[#2E2527] bg-[#221B1D] p-8 text-center text-xs text-[#A89F97]">
+                                        Memuat data pelanggan...
+                                    </div>
+                                ) : customerList.length === 0 ? (
+                                    <div className="rounded-2xl border border-[#2E2527] bg-[#221B1D] p-8 text-center text-xs text-[#A89F97]">
+                                        {customerSearch
+                                            ? `Tidak ada pelanggan yang cocok dengan "${customerSearch}".`
+                                            : "Belum ada pelanggan terdaftar."}
+                                    </div>
+                                ) : (
+                                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                        {customerList.map((cust) => {
+                                            const cleanPhone = cust.phone.replace(/^0/, "62");
+                                            return (
+                                                <div
+                                                    key={cust.id}
+                                                    className="rounded-2xl border border-[#2E2527] bg-[#221B1D] p-4 transition hover:border-[#3E3234] flex flex-col justify-between gap-3"
+                                                >
+                                                    <div>
+                                                        <div className="flex items-start justify-between gap-2">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-950/40 text-base font-bold text-emerald-300 ring-1 ring-emerald-500/30">
+                                                                    👤
+                                                                </div>
+                                                                <div className="min-w-0">
+                                                                    <h4 className="font-bold text-sm text-white truncate">
+                                                                        {cust.name}
+                                                                    </h4>
+                                                                    <p className="text-xs text-[#A89F97] font-mono">
+                                                                        {cust.phone}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+
+                                                            <a
+                                                                href={`https://wa.me/${cleanPhone}`}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                title="Chat WhatsApp"
+                                                                className="rounded-lg bg-emerald-600/30 border border-emerald-500/40 px-2 py-1 text-[11px] font-bold text-emerald-300 hover:bg-emerald-600/50 transition inline-flex items-center gap-1"
+                                                            >
+                                                                <span>WA</span> ↗
+                                                            </a>
+                                                        </div>
+
+                                                        {/* Customer summary */}
+                                                        <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-[#1A1416] p-2.5 text-center">
+                                                            <div>
+                                                                <span className="block text-[10px] text-[#A89F97]">Total Pesanan</span>
+                                                                <strong className="text-xs text-white">
+                                                                    {cust.orders_count || 0} Order
+                                                                </strong>
+                                                            </div>
+                                                            <div>
+                                                                <span className="block text-[10px] text-[#A89F97]">Total Belanja</span>
+                                                                <strong className="text-xs text-emerald-400">
+                                                                    Rp {(cust.total_spent || 0).toLocaleString("id-ID")}
+                                                                </strong>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="pt-2 border-t border-[#2E2527] flex items-center justify-between text-[11px] text-[#A89F97]">
+                                                        <span>ID: #{cust.id}</span>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => openEditCustomerModal(cust)}
+                                                                className="rounded-lg border border-[#3E3234] px-2.5 py-1 text-xs font-semibold text-[#D1C7BD] hover:bg-[#2E2527] transition"
+                                                            >
+                                                                ✏️ Edit / Reset
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleDeleteCustomer(cust.id, cust.name)}
+                                                                className="rounded-lg border border-red-500/30 px-2 py-1 text-xs font-semibold text-red-400 hover:bg-red-950/40 transition"
+                                                                title="Hapus Pelanggan"
+                                                            >
+                                                                Hapus
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -1310,7 +1887,7 @@ export default function AdminDashboardPage() {
                                                 className="h-4 w-4 rounded text-[#7A2E3A]"
                                             />
                                             <span className="text-xs font-medium text-white">
-                                                Siap Dipesan (Ready)
+                                                Tersedia (Siap Dipesan)
                                             </span>
                                         </label>
                                     </div>
@@ -1652,6 +2229,198 @@ export default function AdminDashboardPage() {
                                 {refundSubmitting ? "Menyimpan..." : "✓ Konfirmasi Refund Selesai"}
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── MODAL TAMBAH / EDIT ADMIN & STAFF ─────────────────────────── */}
+            {showAdminModal && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+                    onClick={() => !savingAdmin && setShowAdminModal(false)}
+                >
+                    <div
+                        className="relative w-full max-w-md rounded-2xl border border-[#3E3234] bg-[#221B1D] p-5 shadow-2xl text-white"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between border-b border-[#2E2527] pb-3">
+                            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                                <span>🛡️</span> {editingAdmin ? "Edit Data Admin" : "Tambah Admin / Staff Baru"}
+                            </h3>
+                            <button
+                                type="button"
+                                disabled={savingAdmin}
+                                onClick={() => setShowAdminModal(false)}
+                                className="text-xs text-[#A89F97] hover:text-white"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSaveAdmin} className="mt-4 space-y-3.5">
+                            <div>
+                                <label className="block text-[11px] font-semibold text-[#D1C7BD] mb-1">
+                                    Username <span className="text-red-400">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={adminFormUsername}
+                                    onChange={(e) => setAdminFormUsername(e.target.value)}
+                                    placeholder="e.g. admin_budi"
+                                    className="w-full rounded-xl border border-[#3E3234] bg-[#1A1416] px-3.5 py-2.5 text-xs text-white placeholder-[#78686A] focus:border-[#7A2E3A] focus:outline-none"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-[11px] font-semibold text-[#D1C7BD] mb-1">
+                                    Nama Lengkap <span className="text-red-400">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={adminFormName}
+                                    onChange={(e) => setAdminFormName(e.target.value)}
+                                    placeholder="e.g. Budi Santoso"
+                                    className="w-full rounded-xl border border-[#3E3234] bg-[#1A1416] px-3.5 py-2.5 text-xs text-white placeholder-[#78686A] focus:border-[#7A2E3A] focus:outline-none"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-[11px] font-semibold text-[#D1C7BD] mb-1">
+                                    Role / Hak Akses
+                                </label>
+                                <select
+                                    value={adminFormRole}
+                                    onChange={(e) => setAdminFormRole(e.target.value)}
+                                    className="w-full rounded-xl border border-[#3E3234] bg-[#1A1416] px-3.5 py-2.5 text-xs text-white focus:border-[#7A2E3A] focus:outline-none"
+                                >
+                                    <option value="admin">Super Admin (Akses Penuh)</option>
+                                    <option value="staff">Staff Operasional</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-[11px] font-semibold text-[#D1C7BD] mb-1">
+                                    Password {editingAdmin ? "(Kosongkan jika tidak diubah)" : <span className="text-red-400">*</span>}
+                                </label>
+                                <input
+                                    type="password"
+                                    required={!editingAdmin}
+                                    value={adminFormPassword}
+                                    onChange={(e) => setAdminFormPassword(e.target.value)}
+                                    placeholder={editingAdmin ? "•••••••• (Biarkan kosong jika tidak ganti)" : "Minimal 6 karakter"}
+                                    className="w-full rounded-xl border border-[#3E3234] bg-[#1A1416] px-3.5 py-2.5 text-xs text-white placeholder-[#78686A] focus:border-[#7A2E3A] focus:outline-none"
+                                />
+                            </div>
+
+                            <div className="mt-5 flex gap-2 pt-2 border-t border-[#2E2527]">
+                                <button
+                                    type="button"
+                                    disabled={savingAdmin}
+                                    onClick={() => setShowAdminModal(false)}
+                                    className="flex-1 rounded-xl border border-[#3E3234] py-2.5 text-xs font-bold text-[#D1C7BD] hover:bg-[#2E2527]"
+                                >
+                                    Batal
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={savingAdmin}
+                                    className="flex-1 rounded-xl bg-[#7A2E3A] py-2.5 text-xs font-bold text-white shadow-md shadow-[#7A2E3A]/40 hover:bg-[#64252F] transition disabled:opacity-60"
+                                >
+                                    {savingAdmin ? "Menyimpan..." : editingAdmin ? "Simpan Perubahan" : "Buat Akun Admin"}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* ── MODAL TAMBAH / EDIT PELANGGAN ──────────────────────────────── */}
+            {showCustomerModal && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+                    onClick={() => !savingCustomer && setShowCustomerModal(false)}
+                >
+                    <div
+                        className="relative w-full max-w-md rounded-2xl border border-[#3E3234] bg-[#221B1D] p-5 shadow-2xl text-white"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between border-b border-[#2E2527] pb-3">
+                            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                                <span>👤</span> {editingCustomer ? "Edit Pelanggan & Reset Sandi" : "Tambah Pelanggan Baru"}
+                            </h3>
+                            <button
+                                type="button"
+                                disabled={savingCustomer}
+                                onClick={() => setShowCustomerModal(false)}
+                                className="text-xs text-[#A89F97] hover:text-white"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSaveCustomer} className="mt-4 space-y-3.5">
+                            <div>
+                                <label className="block text-[11px] font-semibold text-[#D1C7BD] mb-1">
+                                    Nama Lengkap <span className="text-red-400">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={customerFormName}
+                                    onChange={(e) => setCustomerFormName(e.target.value)}
+                                    placeholder="e.g. Shavazia Fralia"
+                                    className="w-full rounded-xl border border-[#3E3234] bg-[#1A1416] px-3.5 py-2.5 text-xs text-white placeholder-[#78686A] focus:border-[#7A2E3A] focus:outline-none"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-[11px] font-semibold text-[#D1C7BD] mb-1">
+                                    Nomor WhatsApp <span className="text-red-400">*</span>
+                                </label>
+                                <input
+                                    type="tel"
+                                    required
+                                    value={customerFormPhone}
+                                    onChange={(e) => setCustomerFormPhone(e.target.value)}
+                                    placeholder="e.g. 08123456789"
+                                    className="w-full rounded-xl border border-[#3E3234] bg-[#1A1416] px-3.5 py-2.5 text-xs text-white placeholder-[#78686A] focus:border-[#7A2E3A] focus:outline-none"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-[11px] font-semibold text-[#D1C7BD] mb-1">
+                                    Password {editingCustomer ? "(Kosongkan jika tidak di-reset)" : <span className="text-red-400">*</span>}
+                                </label>
+                                <input
+                                    type="password"
+                                    required={!editingCustomer}
+                                    value={customerFormPassword}
+                                    onChange={(e) => setCustomerFormPassword(e.target.value)}
+                                    placeholder={editingCustomer ? "•••••••• (Biarkan kosong jika tidak reset)" : "Minimal 6 karakter"}
+                                    className="w-full rounded-xl border border-[#3E3234] bg-[#1A1416] px-3.5 py-2.5 text-xs text-white placeholder-[#78686A] focus:border-[#7A2E3A] focus:outline-none"
+                                />
+                            </div>
+
+                            <div className="mt-5 flex gap-2 pt-2 border-t border-[#2E2527]">
+                                <button
+                                    type="button"
+                                    disabled={savingCustomer}
+                                    onClick={() => setShowCustomerModal(false)}
+                                    className="flex-1 rounded-xl border border-[#3E3234] py-2.5 text-xs font-bold text-[#D1C7BD] hover:bg-[#2E2527]"
+                                >
+                                    Batal
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={savingCustomer}
+                                    className="flex-1 rounded-xl bg-[#7A2E3A] py-2.5 text-xs font-bold text-white shadow-md shadow-[#7A2E3A]/40 hover:bg-[#64252F] transition disabled:opacity-60"
+                                >
+                                    {savingCustomer ? "Menyimpan..." : editingCustomer ? "Simpan Perubahan" : "Daftarkan Pelanggan"}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}

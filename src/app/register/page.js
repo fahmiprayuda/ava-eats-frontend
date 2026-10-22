@@ -106,8 +106,8 @@ function RegisterForm() {
                 </Link>
 
                 <div className="mb-8">
-                    <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#7A2E3A] text-3xl">
-                        🍱
+                    <div className="mb-5 flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl bg-white p-1 shadow-md shadow-[#7A2E3A]/10 ring-1 ring-[#E8D6CE]">
+                        <img src="/logo.png" alt="Ava Eats" className="h-full w-full object-cover rounded-xl" />
                     </div>
 
                     <p className="mb-2 text-sm font-semibold tracking-[0.2em] text-[#7A2E3A]">
