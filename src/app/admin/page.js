@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiRequest, getImageUrl } from "@/lib/api";
+import ThermalReceiptModal from "@/components/ThermalReceiptModal";
 
 export default function AdminDashboardPage() {
     const router = useRouter();
@@ -98,6 +99,7 @@ export default function AdminDashboardPage() {
     const [uploadingRefundProof, setUploadingRefundProof] = useState(false);
     const [refundSubmitting, setRefundSubmitting] = useState(false);
     const [previewImageModal, setPreviewImageModal] = useState("");
+    const [printOrder, setPrintOrder] = useState(null);
     const refundFileInputRef = useRef(null);
 
     // Feedback
@@ -1059,13 +1061,23 @@ export default function AdminDashboardPage() {
                                                 </span>
                                             </div>
 
-                                            <div className="text-right">
-                                                <span className="text-xs sm:text-sm font-bold text-white">
-                                                    Rp {(ord.grand_total || ord.total_amount || 0).toLocaleString("id-ID")}
-                                                </span>
-                                                <span className="block text-[9px] text-[#A89F97]">
-                                                    {ord.created_at ? new Date(ord.created_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "-"}
-                                                </span>
+                                            <div className="flex items-center gap-2.5">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setPrintOrder(ord)}
+                                                    className="rounded-lg border border-[#3E3234] bg-[#2A2123] px-2.5 py-1 text-xs font-semibold text-[#D1C7BD] hover:bg-[#342A2C] hover:text-white transition inline-flex items-center gap-1 shadow-xs"
+                                                    title="Cetak Struk & Label Thermal (58mm / 80mm)"
+                                                >
+                                                    <span>🖨️</span> Cetak Struk
+                                                </button>
+                                                <div className="text-right">
+                                                    <span className="text-xs sm:text-sm font-bold text-white">
+                                                        Rp {(ord.grand_total || ord.total_amount || 0).toLocaleString("id-ID")}
+                                                    </span>
+                                                    <span className="block text-[9px] text-[#A89F97]">
+                                                        {ord.created_at ? new Date(ord.created_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "-"}
+                                                    </span>
+                                                </div>
                                             </div>
                                         </div>
 
@@ -2451,6 +2463,14 @@ export default function AdminDashboardPage() {
                         />
                     </div>
                 </div>
+            )}
+
+            {/* ── Thermal Receipt & Shipping Label Modal ──────────────────────────────── */}
+            {printOrder && (
+                <ThermalReceiptModal
+                    order={printOrder}
+                    onClose={() => setPrintOrder(null)}
+                />
             )}
         </main>
     );
