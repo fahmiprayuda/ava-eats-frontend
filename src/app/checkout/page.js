@@ -36,6 +36,7 @@ export default function CheckoutPage() {
     const [notes, setNotes] = useState("");
     const [paymentMethod, setPaymentMethod] = useState("qris");
     const [fulfillmentMethod, setFulfillmentMethod] = useState("delivery");
+    const [notifyWhatsapp, setNotifyWhatsapp] = useState(true);
 
     // ── shipping / courier state ──────────────────────────────────────────
     const [shippingRates, setShippingRates] = useState([]);
@@ -348,6 +349,7 @@ export default function CheckoutPage() {
                             ? selectedRate.courier_service_code
                             : null,
                     shipping_cost: shippingCost,
+                    notify_whatsapp: notifyWhatsapp,
                 }),
             });
 
@@ -930,6 +932,26 @@ export default function CheckoutPage() {
                                 placeholder="Contoh: Tidak pakai bawang, extra sambal..."
                                 className="w-full rounded-xl border border-[#E8D6CE] bg-white px-4 py-3 text-sm text-[#2A2620] outline-none focus:border-[#7A2E3A] focus:ring-1 focus:ring-[#7A2E3A]"
                             />
+                        </div>
+
+                        {/* WhatsApp Notification Opt-In Toggle */}
+                        <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-3.5 sm:p-4 transition">
+                            <label className="flex items-start gap-3 cursor-pointer select-none">
+                                <input
+                                    type="checkbox"
+                                    checked={notifyWhatsapp}
+                                    onChange={(e) => setNotifyWhatsapp(e.target.checked)}
+                                    className="mt-0.5 h-4 w-4 rounded border-emerald-400 text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
+                                />
+                                <div className="text-xs">
+                                    <span className="font-bold text-emerald-950 flex items-center gap-1.5">
+                                        <span>📲</span> Kirim update pesanan via WhatsApp
+                                    </span>
+                                    <p className="mt-1 text-emerald-800/90 leading-relaxed text-[11px]">
+                                        Dapatkan notifikasi otomatis saat pembayaran terverifikasi, pesanan diproses, dan link lacak kurir real-time langsung ke WhatsApp. (Hilangkan centang jika tidak ingin menerima pesan).
+                                    </p>
+                                </div>
+                            </label>
                         </div>
 
                         <div className="checkout-total-row">
