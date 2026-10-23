@@ -32,7 +32,8 @@ export default function ThermalReceiptModal({ order, onClose }) {
     );
     const shippingCost = order.shipping_cost || 0;
     const packagingFee = order.packaging_fee || 0;
-    const grandTotal = order.grand_total || order.total_amount || (itemsSubtotal + shippingCost + packagingFee);
+    const discountAmount = order.discount_amount || 0;
+    const grandTotal = order.grand_total || order.total_amount || (itemsSubtotal + shippingCost + packagingFee - discountAmount);
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
@@ -233,6 +234,12 @@ export default function ThermalReceiptModal({ order, onClose }) {
                                 <div className="flex justify-between">
                                     <span>Extra Packaging (Bag+Ice):</span>
                                     <span>Rp {packagingFee.toLocaleString("id-ID")}</span>
+                                </div>
+                            )}
+                            {discountAmount > 0 && (
+                                <div className="flex justify-between font-bold">
+                                    <span>Diskon Promo {order.promo_code ? `(${order.promo_code})` : ""}:</span>
+                                    <span>-Rp {discountAmount.toLocaleString("id-ID")}</span>
                                 </div>
                             )}
                             <div className="flex justify-between font-black text-[12px] pt-1 border-t border-black">

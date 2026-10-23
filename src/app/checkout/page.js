@@ -39,6 +39,30 @@ export default function CheckoutPage() {
     const [notifyWhatsapp, setNotifyWhatsapp] = useState(true);
     const [extraPackaging, setExtraPackaging] = useState(true);
 
+    // ── promo / voucher state ─────────────────────────────────────────────
+    const [promoInput, setPromoInput] = useState("");
+    const [appliedPromo, setAppliedPromo] = useState(null);
+    const [promoLoading, setPromoLoading] = useState(false);
+    const [promoError, setPromoError] = useState("");
+    const [availablePromos, setAvailablePromos] = useState([]);
+
+    // Load available active promos for suggestion
+    useEffect(() => {
+        let isMounted = true;
+        apiRequest("/promos/active")
+            .then((res) => {
+                if (isMounted) {
+                    setAvailablePromos(Array.isArray(res) ? res : res?.promos || []);
+                }
+            })
+            .catch(() => {
+                if (isMounted) setAvailablePromos([]);
+            });
+        return () => {
+            isMounted = false;
+        };
+    }, []);
+
     // ── shipping / courier state ──────────────────────────────────────────
     const [shippingRates, setShippingRates] = useState([]);
     const [shippingLoading, setShippingLoading] = useState(false);
@@ -351,6 +375,7 @@ export default function CheckoutPage() {
                             : null,
                     shipping_cost: shippingCost,
                     packaging_fee: packagingFee,
+                    promo_code: (appliedPromo && isPromoValidForOrder) ? appliedPromo.code : null,
                     notify_whatsapp: notifyWhatsapp,
                 }),
             });
@@ -414,6 +439,54 @@ export default function CheckoutPage() {
         router.push("/");
     }
 
+    // ── Promo Code Actions ────────────────────────────────────────────────
+    async function handleApplyPromo(customCode) {
+        const code = (customCode || promoInput).trim().toUpperCase();
+        if (!code) {
+            setPromoError("Masukkan kode promo terlebih dahulu.");
+            return;
+        }
+
+        try {
+            setPromoLoading(true);
+            setPromoError("");
+            const res = await apiRequest("/promos/validate", {
+                method: "POST",
+                body: JSON.stringify({
+                    code,
+                    order_amount: totalPrice,
+                    shipping_cost: shippingCost,
+                }),
+            });
+
+            if (res.valid) {
+                const promoData = res.promo || res;
+                setAppliedPromo({
+                    ...promoData,
+                    code: promoData.code || res.promo_code,
+                    name: promoData.name || res.name || res.description,
+                    discount_type: promoData.discount_type || res.discount_type,
+                    discount_value: promoData.discount_value || res.discount_value,
+                    max_discount: promoData.max_discount || res.max_discount,
+                    min_order_amount: promoData.min_order_amount || res.min_order_amount,
+                });
+                setPromoInput(promoData.code || res.promo_code);
+            } else {
+                setPromoError(res.message || "Kode promo tidak valid.");
+            }
+        } catch (err) {
+            setPromoError(err.message || "Gagal menerapkan promo.");
+        } finally {
+            setPromoLoading(false);
+        }
+    }
+
+    function handleRemovePromo() {
+        setAppliedPromo(null);
+        setPromoError("");
+        setPromoInput("");
+    }
+
     // ── Derived ───────────────────────────────────────────────────────────
     const selectedRate = useMemo(() => {
         if (!selectedCourierKey) return null;
@@ -438,12 +511,6 @@ export default function CheckoutPage() {
             selectedRate.courier_name?.toLowerCase().includes("paxel"))
     );
 
-    useEffect(() => {
-        if (isPaxel) {
-            setExtraPackaging(true);
-        }
-    }, [isPaxel]);
-
     const totalItems = useMemo(
         () => items.reduce((sum, item) => sum + item.quantity, 0),
         [items]
@@ -454,12 +521,33 @@ export default function CheckoutPage() {
         [items]
     );
 
+    const isPromoValidForOrder = Boolean(
+        appliedPromo && (!appliedPromo.min_order_amount || totalPrice >= appliedPromo.min_order_amount)
+    );
+
     const isPackagingActive = isPaxel || extraPackaging;
     const packagingFee = isPackagingActive ? 2000 : 0;
 
+    const discountAmount = useMemo(() => {
+        if (!appliedPromo || !isPromoValidForOrder) return 0;
+        let disc = 0;
+        if (appliedPromo.discount_type === "percentage") {
+            disc = Math.round((totalPrice * Number(appliedPromo.discount_value)) / 100);
+            if (appliedPromo.max_discount && disc > Number(appliedPromo.max_discount)) {
+                disc = Number(appliedPromo.max_discount);
+            }
+            disc = Math.min(disc, totalPrice);
+        } else if (appliedPromo.discount_type === "fixed_amount") {
+            disc = Math.min(Number(appliedPromo.discount_value), totalPrice);
+        } else if (appliedPromo.discount_type === "shipping_discount") {
+            disc = Math.min(Number(appliedPromo.discount_value), shippingCost);
+        }
+        return Math.max(0, disc);
+    }, [appliedPromo, isPromoValidForOrder, totalPrice, shippingCost]);
+
     const grandTotal = useMemo(
-        () => totalPrice + shippingCost + packagingFee,
-        [totalPrice, shippingCost, packagingFee]
+        () => Math.max(0, totalPrice + shippingCost + packagingFee - discountAmount),
+        [totalPrice, shippingCost, packagingFee, discountAmount]
     );
 
     const isPaymentFinal = ["approved", "expired", "rejected"].includes(paymentStatus);
@@ -1011,6 +1099,101 @@ export default function CheckoutPage() {
                             </label>
                         </div>
 
+                        {/* ── Promo Code / Voucher Card ── */}
+                        <div className="mt-4 rounded-2xl border border-[#E8D6CE] bg-[#FAF7F2] p-3.5 sm:p-4 transition">
+                            <div className="flex items-center gap-2 mb-2.5">
+                                <span className="text-base">🎟️</span>
+                                <h3 className="text-xs font-bold uppercase tracking-wider text-[#7A2E3A]">Kupon & Kode Promo</h3>
+                            </div>
+
+                            {appliedPromo ? (
+                                <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-300 bg-emerald-50/90 p-3">
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-2">
+                                            <span className="rounded bg-emerald-600 px-2 py-0.5 text-xs font-black uppercase text-white tracking-wide">
+                                                {appliedPromo.code}
+                                            </span>
+                                            <strong className="text-xs text-emerald-950 font-bold truncate">
+                                                {appliedPromo.name || "Promo Aktif"}
+                                            </strong>
+                                        </div>
+                                        {isPromoValidForOrder ? (
+                                            <p className="mt-1 text-[11px] text-emerald-800">
+                                                Hemat <span className="font-bold">{formatRupiah(discountAmount)}</span> untuk pesanan ini!
+                                            </p>
+                                        ) : (
+                                            <p className="mt-1 text-[11px] text-amber-700 font-semibold">
+                                                ⚠️ Belanja minimal {formatRupiah(appliedPromo.min_order_amount)} untuk mengaktifkan promo ini.
+                                            </p>
+                                        )}
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={handleRemovePromo}
+                                        className="shrink-0 text-xs font-semibold text-red-600 hover:text-red-700 underline"
+                                    >
+                                        Hapus
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            value={promoInput}
+                                            onChange={(e) => {
+                                                setPromoInput(e.target.value.toUpperCase());
+                                                if (promoError) setPromoError("");
+                                            }}
+                                            placeholder="Masukkan kode promo (misal: MOMSHEBAT)"
+                                            className="flex-1 rounded-xl border border-[#E8D6CE] bg-white px-3.5 py-2 text-xs font-semibold text-[#2A2620] uppercase placeholder:normal-case placeholder:font-normal placeholder:text-[#9A8B88] outline-none focus:border-[#7A2E3A] focus:ring-1 focus:ring-[#7A2E3A]"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => handleApplyPromo()}
+                                            disabled={promoLoading || !promoInput.trim()}
+                                            className="rounded-xl bg-[#7A2E3A] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#60232E] disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            {promoLoading ? "Cek..." : "Pakai"}
+                                        </button>
+                                    </div>
+
+                                    {promoError && (
+                                        <p className="text-xs text-red-600 font-medium flex items-center gap-1">
+                                            <span>⚠️</span> {promoError}
+                                        </p>
+                                    )}
+
+                                    {/* Quick Available Promo Pills */}
+                                    {availablePromos.length > 0 && (
+                                        <div className="pt-1">
+                                            <p className="text-[11px] font-semibold text-[#78686A] mb-1.5">
+                                                Voucher yang bisa Moms gunakan:
+                                            </p>
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {availablePromos.map((promo) => (
+                                                    <button
+                                                        key={promo.id || promo.code}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setPromoInput(promo.code);
+                                                            handleApplyPromo(promo.code);
+                                                        }}
+                                                        className="inline-flex items-center gap-1.5 rounded-lg border border-[#D9C4BD] bg-white px-2 py-1 text-left text-xs font-semibold text-[#7A2E3A] transition hover:bg-[#F9ECE9] hover:border-[#7A2E3A]"
+                                                    >
+                                                        <span className="font-extrabold uppercase">🏷️ {promo.code}</span>
+                                                        <span className="text-[10px] text-[#806B6D] font-normal">
+                                                            ({promo.discount_type === "percentage" ? `${promo.discount_value}%` : promo.discount_type === "shipping_discount" ? "Gratis Ongkir" : formatRupiah(promo.discount_value)})
+                                                        </span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
                         <div className="checkout-total-row">
                             <span>Total item</span>
                             <strong>{totalItems} item</strong>
@@ -1047,6 +1230,15 @@ export default function CheckoutPage() {
                                     </span>
                                 </div>
                                 <strong>{formatRupiah(packagingFee)}</strong>
+                            </div>
+                        )}
+
+                        {discountAmount > 0 && (
+                            <div className="checkout-total-row text-emerald-700">
+                                <span className="flex items-center gap-1 font-semibold text-emerald-800">
+                                    <span>🎟️</span> Diskon Promo ({appliedPromo?.code})
+                                </span>
+                                <strong className="font-bold text-emerald-700">-{formatRupiah(discountAmount)}</strong>
                             </div>
                         )}
 

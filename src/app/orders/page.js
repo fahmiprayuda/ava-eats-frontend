@@ -864,6 +864,17 @@ function OrdersContent() {
                                             </div>
                                         )}
 
+                                        {Boolean(order.discount_amount && order.discount_amount > 0) && (
+                                            <div className="flex justify-between gap-3 text-emerald-700">
+                                                <span className="flex items-center gap-1 font-medium">
+                                                    <span>🎟️</span> Diskon Promo {order.promo_code ? `(${order.promo_code})` : ""}
+                                                </span>
+                                                <span className="font-bold text-emerald-700">
+                                                    -{formatRupiah(order.discount_amount)}
+                                                </span>
+                                            </div>
+                                        )}
+
                                         <div className="pt-2 border-t border-dashed border-[#EEE5DF] flex justify-between gap-3 text-sm sm:text-base">
                                             <span className="font-bold text-[#2A2620]">Total Pembayaran</span>
                                             <span className="font-bold text-[#7A3545]">
