@@ -31,7 +31,8 @@ export default function ThermalReceiptModal({ order, onClose }) {
         0
     );
     const shippingCost = order.shipping_cost || 0;
-    const grandTotal = order.grand_total || order.total_amount || (itemsSubtotal + shippingCost);
+    const packagingFee = order.packaging_fee || 0;
+    const grandTotal = order.grand_total || order.total_amount || (itemsSubtotal + shippingCost + packagingFee);
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
@@ -226,6 +227,12 @@ export default function ThermalReceiptModal({ order, onClose }) {
                                 <div className="flex justify-between">
                                     <span>Ongkos Kirim:</span>
                                     <span>Rp {shippingCost.toLocaleString("id-ID")}</span>
+                                </div>
+                            )}
+                            {packagingFee > 0 && (
+                                <div className="flex justify-between">
+                                    <span>Extra Packaging (Bag+Ice):</span>
+                                    <span>Rp {packagingFee.toLocaleString("id-ID")}</span>
                                 </div>
                             )}
                             <div className="flex justify-between font-black text-[12px] pt-1 border-t border-black">

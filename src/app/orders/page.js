@@ -196,6 +196,8 @@ function OrdersContent() {
     const pollingRef = useRef({});
     const [copiedResi, setCopiedResi] = useState("");
     const [customerPreviewProof, setCustomerPreviewProof] = useState("");
+    const [repeatLoadingId, setRepeatLoadingId] = useState(null);
+    const [repeatOrderModal, setRepeatOrderModal] = useState(null);
 
     function handleCopyResi(resi) {
         if (typeof navigator !== "undefined" && navigator.clipboard) {
@@ -415,6 +417,130 @@ function OrdersContent() {
         } finally {
             setBusyOrderId(null);
         }
+    };
+
+    // ── Repeat Order handler ─────────────────────────────────────────────
+    const handleRepeatOrder = async (order) => {
+        if (!order || !order.items || order.items.length === 0) {
+            alert("Tidak ada item dalam pesanan ini.");
+            return;
+        }
+
+        setRepeatLoadingId(order.id);
+        try {
+            // Ambil daftar menu & stok live dari database
+            const res = await apiRequest("/products");
+            const productList = Array.isArray(res) ? res : (res?.products || []);
+            const productMap = new Map(productList.map((p) => [Number(p.id), p]));
+
+            const itemsReport = [];
+            const validCartItems = [];
+
+            for (const orderItem of order.items) {
+                const pid = Number(orderItem.product_id || orderItem.product?.id);
+                const prod =
+                    productMap.get(pid) ||
+                    productList.find(
+                        (p) =>
+                            p.name &&
+                            orderItem.product_name &&
+                            p.name.trim().toLowerCase() === orderItem.product_name.trim().toLowerCase()
+                    );
+                const reqQty = Number(orderItem.quantity) || 1;
+
+                if (!prod || !prod.is_available || Number(prod.stock || 0) <= 0) {
+                    itemsReport.push({
+                        productId: pid || orderItem.id,
+                        name: orderItem.product_name || prod?.name || "Menu",
+                        requestedQty: reqQty,
+                        availableQty: 0,
+                        price: Number(prod?.price || orderItem.price || 0),
+                        imageUrl: prod?.image || prod?.image_url,
+                        status: "out_of_stock",
+                        reason: "Stok habis / tidak tersedia",
+                    });
+                } else if (Number(prod.stock) < reqQty) {
+                    itemsReport.push({
+                        productId: prod.id,
+                        name: prod.name,
+                        requestedQty: reqQty,
+                        availableQty: Number(prod.stock),
+                        price: Number(prod.price),
+                        imageUrl: prod.image || prod.image_url,
+                        status: "partial",
+                        reason: `Tersedia ${prod.stock} pcs (sebelumnya pesan ${reqQty} pcs)`,
+                    });
+                    validCartItems.push({
+                        product_id: prod.id,
+                        name: prod.name,
+                        price: Number(prod.price),
+                        quantity: Number(prod.stock),
+                        image_url: prod.image || prod.image_url,
+                    });
+                } else {
+                    itemsReport.push({
+                        productId: prod.id,
+                        name: prod.name,
+                        requestedQty: reqQty,
+                        availableQty: reqQty,
+                        price: Number(prod.price),
+                        imageUrl: prod.image || prod.image_url,
+                        status: "ok",
+                    });
+                    validCartItems.push({
+                        product_id: prod.id,
+                        name: prod.name,
+                        price: Number(prod.price),
+                        quantity: reqQty,
+                        image_url: prod.image || prod.image_url,
+                    });
+                }
+            }
+
+            const hasIssue = itemsReport.some((it) => it.status !== "ok");
+
+            if (hasIssue) {
+                // Ada menu yang stoknya berkurang / habis -> Munculkan pop-up pemberitahuan
+                setRepeatOrderModal({
+                    orderCode: order.order_code,
+                    itemsReport,
+                    validCartItems,
+                    availableCount: validCartItems.length,
+                });
+            } else {
+                // Semua menu 100% lengkap dan tersedia -> Langsung arahkan ke checkout
+                localStorage.setItem(
+                    "ava_eats_checkout_cart",
+                    JSON.stringify(validCartItems)
+                );
+                if (typeof window !== "undefined") {
+                    window.dispatchEvent(new Event("ava_eats_cart_updated"));
+                }
+                router.push("/checkout");
+            }
+        } catch (err) {
+            console.error("Gagal memeriksa ketersediaan menu:", err);
+            alert("Gagal memeriksa ketersediaan menu. Silakan coba kembali beberapa saat lagi.");
+        } finally {
+            setRepeatLoadingId(null);
+        }
+    };
+
+    const handleConfirmRepeatCheckout = () => {
+        if (!repeatOrderModal || !repeatOrderModal.validCartItems || repeatOrderModal.validCartItems.length === 0) {
+            setRepeatOrderModal(null);
+            return;
+        }
+
+        localStorage.setItem(
+            "ava_eats_checkout_cart",
+            JSON.stringify(repeatOrderModal.validCartItems)
+        );
+        if (typeof window !== "undefined") {
+            window.dispatchEvent(new Event("ava_eats_cart_updated"));
+        }
+        setRepeatOrderModal(null);
+        router.push("/checkout");
     };
 
     // ─────────────────────────────────────────────────────────────────────
@@ -704,26 +830,46 @@ function OrdersContent() {
                                     <div className="my-4 border-t border-[#EEE5DF]" />
 
                                     {/* ── Totals ── */}
-                                    <div className="flex justify-between gap-3 text-sm">
-                                        <span className="text-[#78686A]">
-                                            {order.fulfillment_method === "pickup"
-                                                ? "Ambil di tempat"
-                                                : order.courier
-                                                    ? `Pengiriman (${order.courier.toUpperCase()}${order.courier_service ? ` ${order.courier_service.toUpperCase()}` : ""})`
-                                                    : "Pengiriman"}
-                                        </span>
-                                        <span className="font-medium">
-                                            {order.fulfillment_method === "pickup"
-                                                ? "Gratis"
-                                                : formatRupiah(order.shipping_cost)}
-                                        </span>
-                                    </div>
+                                    <div className="space-y-1.5 text-xs sm:text-sm">
+                                        <div className="flex justify-between gap-3 text-[#78686A]">
+                                            <span>Subtotal Menu</span>
+                                            <span className="font-medium text-[#2A2620]">
+                                                {formatRupiah(order.total_amount)}
+                                            </span>
+                                        </div>
 
-                                    <div className="mt-2 flex justify-between gap-3">
-                                        <span className="font-semibold">Total</span>
-                                        <span className="text-lg font-bold text-[#7A3545]">
-                                            {formatRupiah(order.grand_total)}
-                                        </span>
+                                        <div className="flex justify-between gap-3 text-[#78686A]">
+                                            <span>
+                                                {order.fulfillment_method === "pickup"
+                                                    ? "Ambil di tempat"
+                                                    : order.courier
+                                                        ? `Pengiriman (${order.courier.toUpperCase()}${order.courier_service ? ` ${order.courier_service.toUpperCase()}` : ""})`
+                                                        : "Ongkos Kirim"}
+                                            </span>
+                                            <span className="font-medium text-[#2A2620]">
+                                                {order.fulfillment_method === "pickup"
+                                                    ? "Gratis"
+                                                    : formatRupiah(order.shipping_cost || 0)}
+                                            </span>
+                                        </div>
+
+                                        {Boolean(order.packaging_fee && order.packaging_fee > 0) && (
+                                            <div className="flex justify-between gap-3 text-[#78686A]">
+                                                <span className="flex items-center gap-1">
+                                                    <span>❄️</span> Extra Packaging (Bag+Ice)
+                                                </span>
+                                                <span className="font-medium text-[#2A2620]">
+                                                    {formatRupiah(order.packaging_fee)}
+                                                </span>
+                                            </div>
+                                        )}
+
+                                        <div className="pt-2 border-t border-dashed border-[#EEE5DF] flex justify-between gap-3 text-sm sm:text-base">
+                                            <span className="font-bold text-[#2A2620]">Total Pembayaran</span>
+                                            <span className="font-bold text-[#7A3545]">
+                                                {formatRupiah(order.grand_total || order.total_amount)}
+                                            </span>
+                                        </div>
                                     </div>
 
                                     {/* ── Payment status ── */}
@@ -900,6 +1046,19 @@ function OrdersContent() {
                                             onDismiss={() => setCancelConfirmId(null)}
                                         />
                                     )}
+
+                                    {/* ── Repeat Order (Pesan Lagi) Button ── */}
+                                    <button
+                                        type="button"
+                                        disabled={isBusy || repeatLoadingId === order.id}
+                                        onClick={() => handleRepeatOrder(order)}
+                                        className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-[#7A3545]/25 bg-[#FAF7F2] px-4 py-2.5 text-xs font-bold text-[#7A3545] hover:bg-[#7A3545] hover:text-white transition shadow-2xs disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                        <span>🔄</span>
+                                        {repeatLoadingId === order.id
+                                            ? "Memeriksa ketersediaan menu..."
+                                            : "Pesan Lagi (Repeat Order)"}
+                                    </button>
                                 </article>
                             );
                         })}
@@ -998,6 +1157,113 @@ function OrdersContent() {
                                 Buka gambar di tab baru ↗
                             </a>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Repeat Order Stock Adjustment Modal ── */}
+            {repeatOrderModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div
+                        className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
+                        onClick={() => setRepeatOrderModal(null)}
+                    />
+                    <div className="relative z-10 w-full max-w-md overflow-hidden rounded-2xl border border-[#E8D6CE] bg-white p-5 shadow-2xl">
+                        <div className="flex items-center gap-2.5 border-b border-[#F0E6E1] pb-3">
+                            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-100 text-lg">
+                                ⚠️
+                            </span>
+                            <div>
+                                <h3 className="text-sm font-bold text-[#2A2620]">
+                                    Penyesuaian Stok Menu
+                                </h3>
+                                <p className="text-[11px] text-[#78686A]">
+                                    Pesan Ulang #{repeatOrderModal.orderCode}
+                                </p>
+                            </div>
+                        </div>
+
+                        <p className="mt-3 text-xs text-[#524446] leading-relaxed">
+                            Beberapa menu dari pesanan sebelumnya mengalami perubahan ketersediaan saat ini:
+                        </p>
+
+                        <div className="mt-3 max-h-60 overflow-y-auto space-y-2 pr-1">
+                            {repeatOrderModal.itemsReport.map((it, idx) => (
+                                <div
+                                    key={idx}
+                                    className={`flex items-start justify-between rounded-xl p-2.5 text-xs ${
+                                        it.status === "out_of_stock"
+                                            ? "border border-red-200 bg-red-50/80 text-red-900"
+                                            : it.status === "partial"
+                                            ? "border border-amber-200 bg-amber-50/80 text-amber-900"
+                                            : "border border-emerald-100 bg-emerald-50/50 text-emerald-900"
+                                    }`}
+                                >
+                                    <div className="min-w-0 pr-2">
+                                        <p className="font-bold truncate">{it.name}</p>
+                                        <p className="text-[11px] mt-0.5 opacity-90">
+                                            {it.status === "out_of_stock" ? (
+                                                <span className="text-red-700 font-semibold">❌ {it.reason}</span>
+                                            ) : it.status === "partial" ? (
+                                                <span className="text-amber-800 font-semibold">
+                                                    ⚠️ {it.reason}
+                                                </span>
+                                            ) : (
+                                                <span className="text-emerald-700 font-medium">
+                                                    ✓ Tersedia lengkap ({it.availableQty} pcs)
+                                                </span>
+                                            )}
+                                        </p>
+                                    </div>
+                                    <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-extrabold uppercase ${
+                                        it.status === "out_of_stock"
+                                            ? "bg-red-200 text-red-800"
+                                            : it.status === "partial"
+                                            ? "bg-amber-200 text-amber-900"
+                                            : "bg-emerald-200 text-emerald-800"
+                                    }`}>
+                                        {it.status === "out_of_stock" ? "Habis" : `${it.availableQty}x`}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+
+                        {repeatOrderModal.availableCount > 0 ? (
+                            <div className="mt-5 space-y-2">
+                                <p className="text-[11px] text-[#78686A]">
+                                    Menu yang tersedia akan dimasukkan ke keranjang belanja Anda dengan jumlah yang telah disesuaikan.
+                                </p>
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setRepeatOrderModal(null)}
+                                        className="flex-1 rounded-xl border border-[#D5C2B8] py-2.5 text-xs font-bold text-[#78686A] hover:bg-[#FAF7F2] transition"
+                                    >
+                                        Batal
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleConfirmRepeatCheckout}
+                                        className="flex-1 rounded-xl bg-[#7A3545] py-2.5 text-xs font-bold text-white shadow-md shadow-[#7A3545]/20 hover:bg-[#642835] transition"
+                                    >
+                                        Lanjutkan ({repeatOrderModal.availableCount} Menu) →
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="mt-5 space-y-3">
+                                <div className="rounded-xl bg-red-100/70 p-3 text-center text-xs font-medium text-red-800">
+                                    Mohon maaf, semua menu dari pesanan ini sedang tidak tersedia saat ini.
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setRepeatOrderModal(null)}
+                                    className="w-full rounded-xl bg-[#7A3545] py-2.5 text-xs font-bold text-white transition"
+                                >
+                                    Tutup
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

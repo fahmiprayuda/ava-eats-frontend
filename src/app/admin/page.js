@@ -1059,6 +1059,11 @@ export default function AdminDashboardPage() {
                                                 <span className="rounded-lg bg-[#342A2C] px-2 py-0.5 text-[9px] text-[#A89F97]">
                                                     {((ord.fulfillment_method || ord.order_type) === "delivery") ? "🛵 Delivery" : "🛍️ Pickup"}
                                                 </span>
+                                                {Boolean(ord.packaging_fee && ord.packaging_fee > 0) && (
+                                                    <span className="rounded-lg bg-sky-950/60 border border-sky-500/30 px-2 py-0.5 text-[9px] font-bold text-sky-300">
+                                                        ❄️ Bag Thermal + Ice
+                                                    </span>
+                                                )}
                                             </div>
 
                                             <div className="flex items-center gap-2.5">

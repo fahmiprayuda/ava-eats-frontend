@@ -37,6 +37,7 @@ export default function CheckoutPage() {
     const [paymentMethod, setPaymentMethod] = useState("qris");
     const [fulfillmentMethod, setFulfillmentMethod] = useState("delivery");
     const [notifyWhatsapp, setNotifyWhatsapp] = useState(true);
+    const [extraPackaging, setExtraPackaging] = useState(true);
 
     // ── shipping / courier state ──────────────────────────────────────────
     const [shippingRates, setShippingRates] = useState([]);
@@ -349,6 +350,7 @@ export default function CheckoutPage() {
                             ? selectedRate.courier_service_code
                             : null,
                     shipping_cost: shippingCost,
+                    packaging_fee: packagingFee,
                     notify_whatsapp: notifyWhatsapp,
                 }),
             });
@@ -429,6 +431,19 @@ export default function CheckoutPage() {
         return Number(selectedRate.price) || 0;
     }, [fulfillmentMethod, selectedRate]);
 
+    const isPaxel = Boolean(
+        fulfillmentMethod === "delivery" &&
+        selectedRate &&
+        (selectedRate.courier_code?.toLowerCase() === "paxel" ||
+            selectedRate.courier_name?.toLowerCase().includes("paxel"))
+    );
+
+    useEffect(() => {
+        if (isPaxel) {
+            setExtraPackaging(true);
+        }
+    }, [isPaxel]);
+
     const totalItems = useMemo(
         () => items.reduce((sum, item) => sum + item.quantity, 0),
         [items]
@@ -439,9 +454,12 @@ export default function CheckoutPage() {
         [items]
     );
 
+    const isPackagingActive = isPaxel || extraPackaging;
+    const packagingFee = isPackagingActive ? 2000 : 0;
+
     const grandTotal = useMemo(
-        () => totalPrice + shippingCost,
-        [totalPrice, shippingCost]
+        () => totalPrice + shippingCost + packagingFee,
+        [totalPrice, shippingCost, packagingFee]
     );
 
     const isPaymentFinal = ["approved", "expired", "rejected"].includes(paymentStatus);
@@ -774,11 +792,10 @@ export default function CheckoutPage() {
                                                         return (
                                                             <label
                                                                 key={key}
-                                                                className={`flex cursor-pointer items-center justify-between rounded-xl border p-3.5 transition ${
-                                                                    isSelected
-                                                                        ? "border-[#7A2E3A] bg-[#F3E1DE]/40 shadow-sm"
-                                                                        : "border-[#E8D6CE] bg-white hover:bg-[#FAF7F2]"
-                                                                }`}
+                                                                className={`flex cursor-pointer items-center justify-between rounded-xl border p-3.5 transition ${isSelected
+                                                                    ? "border-[#7A2E3A] bg-[#F3E1DE]/40 shadow-sm"
+                                                                    : "border-[#E8D6CE] bg-white hover:bg-[#FAF7F2]"
+                                                                    }`}
                                                             >
                                                                 <div className="flex min-w-0 items-center gap-3">
                                                                     <input
@@ -934,6 +951,46 @@ export default function CheckoutPage() {
                             />
                         </div>
 
+                        {/* Extra Packaging Checklist Toggle */}
+                        <div className={`mt-4 rounded-2xl border p-3.5 sm:p-4 transition ${isPaxel
+                            ? "border-amber-200 bg-amber-50/70 shadow-xs"
+                            : isPackagingActive
+                                ? "border-[#E8D6CE] bg-white shadow-xs"
+                                : "border-[#EFE5E0] bg-[#FAF7F2]"
+                            }`}>
+                            <label className={`flex items-start gap-3 select-none ${isPaxel ? "cursor-default" : "cursor-pointer"}`}>
+                                <input
+                                    type="checkbox"
+                                    checked={isPackagingActive}
+                                    disabled={isPaxel}
+                                    onChange={(e) => {
+                                        if (!isPaxel) setExtraPackaging(e.target.checked);
+                                    }}
+                                    className="mt-0.5 h-4 w-4 rounded border-[#7A3545]/40 text-[#7A3545] focus:ring-[#7A3545] cursor-pointer accent-[#7A3545] disabled:cursor-not-allowed disabled:opacity-80"
+                                />
+                                <div className="text-xs flex-1">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <span className="font-bold text-[#2A2620] flex items-center gap-1.5 flex-wrap">
+                                            <span>❄️</span> Extra Packaging (Bag Thermal + Ice Gel)
+                                            {isPaxel && (
+                                                <span className="rounded-full bg-amber-200/90 px-2 py-0.5 text-[10px] font-extrabold text-amber-900">
+                                                    Wajib untuk Paxel
+                                                </span>
+                                            )}
+                                        </span>
+                                        <span className="font-bold text-[#7A3545] text-xs">
+                                            +Rp 2.000
+                                        </span>
+                                    </div>
+                                    <p className="mt-1 text-[#665759] leading-relaxed text-[11px]">
+                                        {isPaxel
+                                            ? "Pengiriman Paxel wajib menggunakan extra packaging thermal & ice gel beku demi menjaga mutu frozen food tetap beku optimal selama perjalanan ekspedisi."
+                                            : "Tambahkan tas pendingin thermal & ice gel beku agar kualitas makanan tetap segar, beku, dan higienis selama perjalanan kurir ke rumah Moms."}
+                                    </p>
+                                </div>
+                            </label>
+                        </div>
+
                         {/* WhatsApp Notification Opt-In Toggle */}
                         <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-3.5 sm:p-4 transition">
                             <label className="flex items-start gap-3 cursor-pointer select-none">
@@ -948,7 +1005,7 @@ export default function CheckoutPage() {
                                         <span>📲</span> Kirim update pesanan via WhatsApp
                                     </span>
                                     <p className="mt-1 text-emerald-800/90 leading-relaxed text-[11px]">
-                                        Dapatkan notifikasi otomatis saat pembayaran terverifikasi, pesanan diproses, dan link lacak kurir real-time langsung ke WhatsApp. (Hilangkan centang jika tidak ingin menerima pesan).
+                                        Dapatkan notifikasi otomatis saat paket di-pickup kurir (lengkap dengan link lacak real-time) atau saat pesanan siap diambil di outlet. (Hilangkan centang jika tidak ingin menerima pesan).
                                     </p>
                                 </div>
                             </label>
@@ -978,6 +1035,20 @@ export default function CheckoutPage() {
                                 )}
                             </strong>
                         </div>
+
+                        {isPackagingActive && (
+                            <div className="checkout-total-row">
+                                <div className="flex flex-col">
+                                    <span className="flex items-center gap-1">
+                                        <span>❄️</span> Extra Packaging
+                                    </span>
+                                    <span className="text-[11px] font-normal text-[#78686A]">
+                                        {isPaxel ? "Bag Thermal + Ice Gel (Wajib Paxel)" : "Bag Thermal + Ice Gel beku"}
+                                    </span>
+                                </div>
+                                <strong>{formatRupiah(packagingFee)}</strong>
+                            </div>
+                        )}
 
                         <div className="checkout-total-row grand-total">
                             <span>Total Pembayaran</span>
