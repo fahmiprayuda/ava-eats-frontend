@@ -39,6 +39,27 @@ export default function Home() {
   const [customer, setCustomer] = useState(null);
   const [storeInfoOpen, setStoreInfoOpen] = useState(false);
   const [toast, setToast] = useState("");
+  const [activePromos, setActivePromos] = useState([]);
+
+  // Fetch promo aktif untuk hero banner & menu drawer
+  useEffect(() => {
+    let isMounted = true;
+    apiRequest("/promos/active")
+      .then((data) => {
+        if (isMounted) {
+          setActivePromos(Array.isArray(data) ? data : data?.promos || []);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setActivePromos([]);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [customer]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -149,7 +170,7 @@ export default function Home() {
             ...product,
             price: Number(product.price),
             available: Boolean(product.is_available) && product.stock > 0,
-            category: metadata.category || "Lainnya",
+            category: product.category || metadata.category || "Lainnya",
             emoji: metadata.emoji || "🍽️",
             popular: metadata.popular || false,
           };
@@ -172,29 +193,48 @@ export default function Home() {
     };
   }, []);
 
+  // Fetch kategori menu dari backend
+  const [dbCategories, setDbCategories] = useState([]);
+  useEffect(() => {
+    let isMounted = true;
+    apiRequest("/categories")
+      .then((data) => {
+        if (isMounted && Array.isArray(data)) {
+          setDbCategories(data);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
-
-  const categories = [
-    "Semua",
-    ...new Set(products.map((product) => product.category)),
-  ];
+  const categories = useMemo(() => {
+    const list = [{ name: "Semua", icon: "✨" }];
+    if (dbCategories.length > 0) {
+      dbCategories.forEach((c) => {
+        list.push({ name: c.name, icon: c.icon || "🍽️" });
+      });
+    } else {
+      const existing = [...new Set(products.map((p) => p.category).filter(Boolean))];
+      existing.forEach((cat) => list.push({ name: cat, icon: "🍽️" }));
+    }
+    return list;
+  }, [dbCategories, products]);
 
   const visibleProducts = useMemo(() => {
     return products.filter((product) => {
-      const matchesTab =
-        activeTab === "catalog" || product.available;
-
       const matchesCategory =
         activeCategory === "Semua" ||
         product.category === activeCategory;
 
-      const matchesSearch = product.name
-        .toLowerCase()
-        .includes(search.toLowerCase());
+      const matchesSearch =
+        product.name.toLowerCase().includes(search.toLowerCase()) ||
+        (product.description && product.description.toLowerCase().includes(search.toLowerCase()));
 
-      return matchesTab && matchesCategory && matchesSearch;
+      return matchesCategory && matchesSearch;
     });
-  }, [products, activeTab, activeCategory, search]);
+  }, [products, activeCategory, search]);
 
   const cartItems = products.filter(
     (product) => (quantities[product.id] || 0) > 0
@@ -327,26 +367,39 @@ export default function Home() {
           </p>
         </div>
 
-        {/* Voucher & Promo Quick Banner */}
-        <Link
-          href="/promos"
-          className="mt-3 flex items-center justify-between rounded-2xl border border-[#E8D6CE] bg-[#FAF4F2] p-3 text-xs text-[#7A2E3A] transition hover:bg-[#F5ECE8] shadow-xs"
-        >
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-base shrink-0">🎟️</span>
-            <div className="truncate">
-              <strong className="block text-xs font-bold text-[#7A2E3A]">
-                Klaim Kupon & Voucher Promo
-              </strong>
-              <span className="text-[11px] text-[#806B6D]">
-                Diskon s.d. 10% & subsidi ongkir untuk Moms!
-              </span>
+        {/* Voucher & Promo Quick Banner - Hanya tampil jika ada promo yang sedang aktif */}
+        {activePromos.length > 0 && (
+          <Link
+            href="/promos"
+            className="mt-3 flex items-center justify-between rounded-2xl border border-[#E8D6CE] bg-[#FAF4F2] p-3 text-xs text-[#7A2E3A] transition hover:bg-[#F5ECE8] shadow-xs"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-base shrink-0">🎟️</span>
+              <div className="truncate">
+                <strong className="block text-xs font-bold text-[#7A2E3A]">
+                  Klaim Kupon & Voucher Promo
+                </strong>
+                <span className="text-[11px] text-[#806B6D]">
+                  {(() => {
+                    const maxPct = Math.max(
+                      0,
+                      ...activePromos
+                        .filter((p) => p.discount_type === "percentage")
+                        .map((p) => p.discount_value)
+                    );
+                    if (maxPct > 0) {
+                      return `Diskon s.d. ${maxPct}% & subsidi ongkir untuk Moms!`;
+                    }
+                    return `Tersedia ${activePromos.length} penawaran kupon promo spesial untuk Moms!`;
+                  })()}
+                </span>
+              </div>
             </div>
-          </div>
-          <span className="shrink-0 text-xs font-extrabold text-[#7A2E3A] underline ml-2">
-            Lihat →
-          </span>
-        </Link>
+            <span className="shrink-0 text-xs font-extrabold text-[#7A2E3A] underline ml-2">
+              Lihat →
+            </span>
+          </Link>
+        )}
       </header>
 
       <section className="menu-section">
@@ -382,39 +435,25 @@ export default function Home() {
           )}
         </div>
 
-        <div className="menu-tabs" role="tablist">
-          <button
-            className={activeTab === "available" ? "active" : ""}
-            onClick={() => setActiveTab("available")}
-            role="tab"
-            aria-selected={activeTab === "available"}
-          >
-            Ready to Order
-          </button>
-          <button
-            className={activeTab === "catalog" ? "active" : ""}
-            onClick={() => setActiveTab("catalog")}
-            role="tab"
-            aria-selected={activeTab === "catalog"}
-          >
-            All Menus
-          </button>
-        </div>
-
-        <div className="category-list">
-          {categories.map((category) => (
-            <button
-              key={category}
-              className={
-                activeCategory === category
-                  ? "category-chip active"
-                  : "category-chip"
-              }
-              onClick={() => setActiveCategory(category)}
-            >
-              {category}
-            </button>
-          ))}
+        {/* Kategori Menu Pilihan */}
+        <div className="category-list" role="tablist">
+          {categories.map((cat) => {
+            const catName = typeof cat === "string" ? cat : cat.name;
+            const catIcon = typeof cat === "object" ? cat.icon : null;
+            const isActive = activeCategory === catName;
+            return (
+              <button
+                key={catName}
+                className={isActive ? "category-chip active" : "category-chip"}
+                onClick={() => setActiveCategory(catName)}
+                role="tab"
+                aria-selected={isActive}
+              >
+                {catIcon && <span className="mr-1">{catIcon}</span>}
+                {catName}
+              </button>
+            );
+          })}
         </div>
 
 
@@ -900,8 +939,8 @@ export default function Home() {
                       <strong className="block text-sm text-[#2A2620]">
                         Kupon & Voucher Promo
                       </strong>
-                      <span className="rounded-full bg-[#7A2E3A] px-1.5 py-0.2 text-[9px] font-extrabold uppercase text-white">
-                        Hemat
+                      <span className={`rounded-full px-1.5 py-0.2 text-[9px] font-extrabold uppercase text-white ${activePromos.length > 0 ? "bg-[#7A2E3A]" : "bg-[#A89F97]"}`}>
+                        {activePromos.length > 0 ? `${activePromos.length} Promo` : "Promo"}
                       </span>
                     </div>
                     <span className="text-xs text-[#78686A]">

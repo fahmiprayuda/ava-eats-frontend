@@ -125,8 +125,8 @@ export default function PromosPage() {
                                 >
                                     <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                                         <div className="flex-1">
-                                            {/* Badge tipe diskon */}
-                                            <div className="flex items-center gap-2 mb-1.5">
+                                            {/* Badge tipe diskon & status audiens */}
+                                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                                                 <span className="rounded-full bg-[#FAF0E6] px-2.5 py-0.5 text-[10px] font-bold text-[#7A2E3A] border border-[#E8D6CE]">
                                                     {isPercentage
                                                         ? "Diskon Persen"
@@ -134,6 +134,11 @@ export default function PromosPage() {
                                                         ? "Subsidi Ongkir"
                                                         : "Potongan Langsung"}
                                                 </span>
+                                                {promo.target_type === "specific" && (
+                                                    <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-extrabold text-amber-800 border border-amber-300">
+                                                        ⭐ Khusus Untuk Anda
+                                                    </span>
+                                                )}
                                                 {promo.usage_limit && (
                                                     <span className="text-[10px] text-[#806B6D]">
                                                         Sisa kuota: {Math.max(0, promo.usage_limit - (promo.used_count || 0))} voucher

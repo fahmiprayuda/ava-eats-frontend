@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiRequest } from "@/lib/api";
+import LocationPickerModal from "@/components/LocationPickerModal";
 
 function AddressManager() {
     const router = useRouter();
@@ -37,6 +38,12 @@ function AddressManager() {
     const [gpsCoords, setGpsCoords] = useState(null);
     const [gpsLoading, setGpsLoading] = useState(false);
     const [gpsMsg, setGpsMsg] = useState("");
+    const [showMapPicker, setShowMapPicker] = useState(false);
+
+    function handlePinConfirmed({ lat, lon }) {
+        setGpsCoords({ lat, lon });
+        setGpsMsg(`✓ Titik pin terpasang di peta (${lat.toFixed(5)}, ${lon.toFixed(5)})`);
+    }
 
     useEffect(() => {
         const token = localStorage.getItem("ava_eats_access_token");
@@ -517,28 +524,78 @@ function AddressManager() {
                                     </div>
                                 </div>
 
-                                {/* Smart GPS Button */}
-                                <div className="rounded-xl border border-[#E8D6CE] bg-[#FAF7F2] p-3">
-                                    <div className="flex items-center justify-between">
-                                        <div className="min-w-0 pr-2">
-                                            <span className="block text-xs font-bold text-[#2A2620]">
-                                                📍 Titik GPS Lokasi
-                                            </span>
-                                            <span className="block text-[11px] text-[#6B6459]">
-                                                Bantu kurir instan (Gojek/Grab/Lalamove) tiba tepat di depan pintu.
+                                {/* 📍 Titik GPS Lokasi Interaktif (Geser & Tancep Pin) */}
+                                <div className="rounded-2xl border border-[#E8D6CE] bg-[#FAF7F2] p-3.5 space-y-2.5">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="text-sm">📍</span>
+                                                <span className="block text-xs font-bold text-[#2A2620]">
+                                                    Titik GPS & Pin Peta
+                                                </span>
+                                            </div>
+                                            <span className="block text-[11px] text-[#6B6459] mt-0.5">
+                                                Tandai titik lokasi di peta agar kurir instan sampai tepat di depan pintu rumah Moms.
                                             </span>
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={handleGetGPS}
-                                            disabled={gpsLoading}
-                                            className="shrink-0 rounded-lg border border-[#7A2E3A] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#7A2E3A] shadow-sm hover:bg-[#FAF7F2]"
-                                        >
-                                            {gpsLoading ? "Mencari..." : "Ambil Lokasi"}
-                                        </button>
                                     </div>
+
+                                    {gpsCoords ? (
+                                        <div className="flex items-center justify-between gap-2 rounded-xl border border-emerald-300 bg-emerald-50/80 p-2.5 text-xs text-emerald-900">
+                                            <div className="min-w-0 flex-1">
+                                                <strong className="block text-[11px] font-bold text-emerald-800">
+                                                    ✓ Pin Lokasi Terpasang
+                                                </strong>
+                                                <span className="block text-[10px] text-emerald-700 font-mono truncate">
+                                                    {gpsCoords.lat.toFixed(5)}, {gpsCoords.lon.toFixed(5)}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowMapPicker(true)}
+                                                    className="rounded-lg bg-emerald-700 px-2.5 py-1 text-[11px] font-bold text-white transition hover:bg-emerald-800 shadow-xs"
+                                                >
+                                                    Ubah Pin
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setGpsCoords(null);
+                                                        setGpsMsg("");
+                                                    }}
+                                                    className="rounded-lg border border-emerald-300 bg-white px-2 py-1 text-[11px] text-emerald-800 hover:bg-emerald-100"
+                                                    title="Hapus koordinat"
+                                                >
+                                                    ✕
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-0.5">
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowMapPicker(true)}
+                                                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-[#7A2E3A] px-3 py-2 text-xs font-bold text-white shadow-xs transition hover:bg-[#652530]"
+                                            >
+                                                <span>🗺️</span>
+                                                <span>Buka Peta & Tancep Pin</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={handleGetGPS}
+                                                disabled={gpsLoading}
+                                                className="flex items-center justify-center gap-1 rounded-xl border border-[#E8D6CE] bg-white px-3 py-2 text-xs font-semibold text-[#7A2E3A] hover:bg-[#FAF7F2] disabled:opacity-50"
+                                                title="Ambil GPS perangkat secara otomatis"
+                                            >
+                                                <span>{gpsLoading ? "⏳" : "🎯"}</span>
+                                                <span>{gpsLoading ? "Mencari..." : "GPS Otomatis"}</span>
+                                            </button>
+                                        </div>
+                                    )}
+
                                     {gpsMsg && (
-                                        <p className="mt-2 text-[11px] font-medium text-[#496442]">
+                                        <p className="text-[11px] font-medium text-[#496442]">
                                             {gpsMsg}
                                         </p>
                                     )}
@@ -567,6 +624,14 @@ function AddressManager() {
                         </div>
                     </div>
                 )}
+
+                {/* Modal Peta Interaktif (Geser & Tancep Pin) */}
+                <LocationPickerModal
+                    isOpen={showMapPicker}
+                    onClose={() => setShowMapPicker(false)}
+                    initialCoords={gpsCoords}
+                    onConfirm={handlePinConfirmed}
+                />
             </div>
         </main>
     );

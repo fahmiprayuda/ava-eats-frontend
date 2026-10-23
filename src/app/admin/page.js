@@ -51,9 +51,22 @@ export default function AdminDashboardPage() {
     const [prodStock, setProdStock] = useState(10);
     const [prodImage, setProdImage] = useState("");
     const [prodAvailable, setProdAvailable] = useState(true);
+    const [prodCategoryId, setProdCategoryId] = useState("");
     const [savingProduct, setSavingProduct] = useState(false);
     const [uploadingImage, setUploadingImage] = useState(false);
     const [showCustomUrl, setShowCustomUrl] = useState(false);
+
+    // Categories state
+    const [categoriesList, setCategoriesList] = useState([]);
+    const [categoriesLoading, setCategoriesLoading] = useState(false);
+    const [showCategoryManager, setShowCategoryManager] = useState(false);
+    const [showCategoryModal, setShowCategoryModal] = useState(false);
+    const [editingCategory, setEditingCategory] = useState(null);
+    const [categoryFormName, setCategoryFormName] = useState("");
+    const [categoryFormIcon, setCategoryFormIcon] = useState("🍽️");
+    const [categoryFormDescription, setCategoryFormDescription] = useState("");
+    const [categoryFormProductIds, setCategoryFormProductIds] = useState([]);
+    const [savingCategory, setSavingCategory] = useState(false);
 
     // Audit trails state
     const [auditTrails, setAuditTrails] = useState([]);
@@ -136,6 +149,9 @@ export default function AdminDashboardPage() {
     const [promoStartDate, setPromoStartDate] = useState("");
     const [promoEndDate, setPromoEndDate] = useState("");
     const [promoIsActive, setPromoIsActive] = useState(true);
+    const [promoTargetType, setPromoTargetType] = useState("all"); // "all" | "specific"
+    const [promoSelectedCustomerIds, setPromoSelectedCustomerIds] = useState([]);
+    const [promoCustomerSearch, setPromoCustomerSearch] = useState("");
     const [savingPromo, setSavingPromo] = useState(false);
 
     const showToast = (msg) => {
@@ -222,6 +238,18 @@ export default function AdminDashboardPage() {
         }
     }, []);
 
+    const fetchCategories = useCallback(async () => {
+        setCategoriesLoading(true);
+        try {
+            const data = await apiRequest("/categories/admin", { useAdminToken: true });
+            setCategoriesList(Array.isArray(data) ? data : []);
+        } catch (err) {
+            console.error("Gagal memuat kategori:", err);
+        } finally {
+            setCategoriesLoading(false);
+        }
+    }, []);
+
     useEffect(() => {
         const token = localStorage.getItem("ava_eats_admin_token");
 
@@ -244,6 +272,7 @@ export default function AdminDashboardPage() {
             setLoading(false);
             fetchOrders();
             fetchProducts();
+            fetchCategories();
             fetchPromos();
             fetchAuditTrails();
             if (adminUser?.role !== "staff") {
@@ -253,7 +282,7 @@ export default function AdminDashboardPage() {
         }, 0);
 
         return () => clearTimeout(timer);
-    }, [router, fetchOrders, fetchProducts, fetchPromos, fetchAuditTrails, fetchAdmins, fetchCustomers, adminUser?.role]);
+    }, [router, fetchOrders, fetchProducts, fetchCategories, fetchPromos, fetchAuditTrails, fetchAdmins, fetchCustomers, adminUser?.role]);
 
     // Jika akun adalah staff, pastikan tidak bisa berada di tab User Management
     useEffect(() => {
@@ -273,6 +302,7 @@ export default function AdminDashboardPage() {
                     // Waktu habis: refresh data secara seamless di background
                     fetchOrders();
                     fetchProducts();
+                    fetchCategories();
                     fetchPromos();
                     if (!auditSearchRef.current) {
                         fetchAuditTrails();
@@ -290,7 +320,7 @@ export default function AdminDashboardPage() {
         }, 1000);
 
         return () => clearInterval(countdownInterval);
-    }, [autoRefresh, fetchOrders, fetchProducts, fetchPromos, fetchAuditTrails, fetchAdmins, fetchCustomers, adminUser?.role]);
+    }, [autoRefresh, fetchOrders, fetchProducts, fetchCategories, fetchPromos, fetchAuditTrails, fetchAdmins, fetchCustomers, adminUser?.role]);
 
     function handleLogout() {
         localStorage.removeItem("ava_eats_admin_token");
@@ -470,6 +500,7 @@ export default function AdminDashboardPage() {
         setProdStock(15);
         setProdImage("");
         setProdAvailable(true);
+        setProdCategoryId("");
         setShowCustomUrl(false);
         setShowProductModal(true);
     }
@@ -483,6 +514,7 @@ export default function AdminDashboardPage() {
         setProdStock(p.stock || 0);
         setProdImage(p.image || "");
         setProdAvailable(Boolean(p.is_available));
+        setProdCategoryId(p.category_id ? String(p.category_id) : "");
         setShowCustomUrl(Boolean(p.image && !p.image.includes("/uploads/")));
         setShowProductModal(true);
     }
@@ -551,6 +583,7 @@ export default function AdminDashboardPage() {
             stock: Math.max(0, Number(prodStock)),
             image: prodImage.trim() || null,
             is_available: Number(prodStock) === 0 ? false : prodAvailable,
+            category_id: prodCategoryId ? Number(prodCategoryId) : null,
         };
 
         setSavingProduct(true);
@@ -640,6 +673,87 @@ export default function AdminDashboardPage() {
             fetchAuditTrails();
         } catch (err) {
             alert(err.message || "Gagal menyimpan stok.");
+        }
+    }
+
+    // ── Menu Category Handlers ───────────────────────────────────────────────
+    function openAddCategoryModal() {
+        setEditingCategory(null);
+        setCategoryFormName("");
+        setCategoryFormIcon("🍽️");
+        setCategoryFormDescription("");
+        setCategoryFormProductIds([]);
+        setShowCategoryModal(true);
+    }
+
+    function openEditCategoryModal(cat) {
+        setEditingCategory(cat);
+        setCategoryFormName(cat.name || "");
+        setCategoryFormIcon(cat.icon || "🍽️");
+        setCategoryFormDescription(cat.description || "");
+        setCategoryFormProductIds(cat.product_ids || []);
+        setShowCategoryModal(true);
+    }
+
+    async function handleSaveCategory(e) {
+        e.preventDefault();
+        if (!categoryFormName.trim()) {
+            alert("Nama kategori tidak boleh kosong.");
+            return;
+        }
+
+        setSavingCategory(true);
+        try {
+            const payload = {
+                name: categoryFormName.trim(),
+                icon: categoryFormIcon.trim() || "🍽️",
+                description: categoryFormDescription.trim() || null,
+                product_ids: categoryFormProductIds,
+            };
+
+            if (editingCategory) {
+                await apiRequest(`/categories/${editingCategory.id}`, {
+                    method: "PUT",
+                    useAdminToken: true,
+                    body: JSON.stringify(payload),
+                });
+                showToast(`Kategori '${payload.name}' berhasil diperbarui! 📁`);
+            } else {
+                await apiRequest("/categories", {
+                    method: "POST",
+                    useAdminToken: true,
+                    body: JSON.stringify(payload),
+                });
+                showToast(`Kategori baru '${payload.name}' berhasil dibuat! 🎉`);
+            }
+
+            setShowCategoryModal(false);
+            fetchCategories();
+            fetchProducts();
+            fetchAuditTrails();
+        } catch (err) {
+            alert(err.message || "Gagal menyimpan kategori.");
+        } finally {
+            setSavingCategory(false);
+        }
+    }
+
+    async function handleDeleteCategory(cat) {
+        if (!confirm(`Hapus kategori '${cat.name}'? Menu di dalamnya tidak akan terhapus, melainkan diubah menjadi tanpa kategori.`)) {
+            return;
+        }
+
+        try {
+            await apiRequest(`/categories/${cat.id}`, {
+                method: "DELETE",
+                useAdminToken: true,
+            });
+            showToast(`Kategori '${cat.name}' berhasil dihapus.`);
+            fetchCategories();
+            fetchProducts();
+            fetchAuditTrails();
+        } catch (err) {
+            alert(err.message || "Gagal menghapus kategori.");
         }
     }
 
@@ -825,6 +939,12 @@ export default function AdminDashboardPage() {
         setPromoStartDate("");
         setPromoEndDate("");
         setPromoIsActive(true);
+        setPromoTargetType("all");
+        setPromoSelectedCustomerIds([]);
+        setPromoCustomerSearch("");
+        if (customerList.length === 0) {
+            fetchCustomers();
+        }
         setShowPromoModal(true);
     }
 
@@ -857,7 +977,7 @@ export default function AdminDashboardPage() {
     function openEditPromoModal(promo) {
         setEditingPromo(promo);
         setPromoCode(promo.code || "");
-        setPromoName(promo.name || "");
+        setPromoName(promo.name || promo.description || promo.code || "");
         setPromoDescription(promo.description || "");
         setPromoDiscountType(promo.discount_type || "percentage");
         setPromoDiscountValue(promo.discount_value || 0);
@@ -868,6 +988,16 @@ export default function AdminDashboardPage() {
         setPromoStartDate(formatToInputDate(promo.start_date));
         setPromoEndDate(formatToInputDate(promo.end_date));
         setPromoIsActive(promo.is_active ?? true);
+        setPromoTargetType(promo.target_type || "all");
+        setPromoSelectedCustomerIds(
+            promo.target_customer_ids?.length
+                ? promo.target_customer_ids
+                : promo.target_customers?.map((c) => c.id) || []
+        );
+        setPromoCustomerSearch("");
+        if (customerList.length === 0) {
+            fetchCustomers();
+        }
         setShowPromoModal(true);
     }
 
@@ -886,6 +1016,10 @@ export default function AdminDashboardPage() {
             alert("Nilai diskon harus lebih besar dari 0.");
             return;
         }
+        if (promoTargetType === "specific" && promoSelectedCustomerIds.length === 0) {
+            alert("Silakan pilih minimal 1 pelanggan untuk kupon bertarget khusus.");
+            return;
+        }
 
         setSavingPromo(true);
         try {
@@ -902,6 +1036,8 @@ export default function AdminDashboardPage() {
                 start_date: formatLocalInputToISO(promoStartDate),
                 end_date: formatLocalInputToISO(promoEndDate),
                 is_active: promoIsActive,
+                target_type: promoTargetType,
+                customer_ids: promoTargetType === "specific" ? promoSelectedCustomerIds : [],
             };
 
             if (editingPromo) {
@@ -1482,18 +1618,27 @@ export default function AdminDashboardPage() {
                 {activeTab === "products" && (
                     <div className="space-y-4">
                         {/* Header Action Button */}
-                        <div className="flex items-center justify-between">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                             <div>
                                 <h2 className="text-sm font-bold text-white">Daftar Menu & Stok</h2>
-                                <p className="text-[11px] text-[#A89F97]">Atur ketersediaan dan stok harian dapur.</p>
+                                <p className="text-[11px] text-[#A89F97]">Atur menu makanan, kategori hidangan, dan stok dapur.</p>
                             </div>
-                            <button
-                                type="button"
-                                onClick={openAddProductModal}
-                                className="inline-flex items-center gap-1.5 rounded-xl bg-[#7A2E3A] px-3.5 py-2 text-xs font-bold text-white shadow-md shadow-[#7A2E3A]/40 transition hover:bg-[#913745]"
-                            >
-                                <span>+</span> Tambah Menu Baru
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowCategoryManager(true)}
+                                    className="inline-flex items-center gap-1.5 rounded-xl border border-[#524245] bg-[#2E2527] px-3 py-2 text-xs font-bold text-[#E8A598] hover:bg-[#3E3234] transition"
+                                >
+                                    <span>📁</span> Kelola Kategori ({categoriesList.length})
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={openAddProductModal}
+                                    className="inline-flex items-center gap-1.5 rounded-xl bg-[#7A2E3A] px-3.5 py-2 text-xs font-bold text-white shadow-md shadow-[#7A2E3A]/40 transition hover:bg-[#913745]"
+                                >
+                                    <span>+</span> Tambah Menu Baru
+                                </button>
+                            </div>
                         </div>
 
                         {productsLoading ? (
@@ -1531,9 +1676,14 @@ export default function AdminDashboardPage() {
                                                         )}
                                                         <div className="min-w-0">
                                                             <h3 className="font-bold text-sm text-white truncate">{prod.name}</h3>
-                                                            <span className="block font-semibold text-xs text-emerald-400 mt-0.5">
-                                                                Rp {prod.price?.toLocaleString("id-ID")}
-                                                            </span>
+                                                            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                                                <span className="font-semibold text-xs text-emerald-400">
+                                                                    Rp {prod.price?.toLocaleString("id-ID")}
+                                                                </span>
+                                                                <span className="rounded-md bg-[#2A2022] border border-[#3E3234] px-1.5 py-0.2 text-[10px] text-[#E8A598] font-medium">
+                                                                    {prod.category || "Tanpa Kategori"}
+                                                                </span>
+                                                            </div>
                                                         </div>
                                                     </div>
 
@@ -1815,6 +1965,22 @@ export default function AdminDashboardPage() {
                                                                     ? `s.d. ${new Date(promo.end_date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}`
                                                                     : "Selalu Aktif"}
                                                             </span>
+                                                        </div>
+
+                                                        <div className="flex justify-between items-center text-[#A89F97] text-[11px] pt-1 border-t border-[#2E2527]">
+                                                            <span>Target:</span>
+                                                            {promo.target_type === "specific" ? (
+                                                                <span
+                                                                    className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-400 border border-amber-500/20"
+                                                                    title={promo.target_customers?.map((c) => `${c.name} (${c.phone})`).join(", ") || "Pelanggan Terpilih"}
+                                                                >
+                                                                    🎯 Khusus ({promo.target_customers?.length || promo.target_customer_ids?.length || 0} Pelanggan)
+                                                                </span>
+                                                            ) : (
+                                                                <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400 border border-emerald-500/20">
+                                                                    🌐 Semua Pelanggan
+                                                                </span>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 </div>
@@ -2215,7 +2381,7 @@ export default function AdminDashboardPage() {
                         <form onSubmit={handleSaveProduct} className="mt-4 space-y-3.5">
                             <div>
                                 <label className="mb-1 block text-xs font-semibold text-[#D1C7BD]">
-                                    Nama Menu Makanan
+                                    Nama Menu Makanan *
                                 </label>
                                 <input
                                     type="text"
@@ -2225,6 +2391,24 @@ export default function AdminDashboardPage() {
                                     required
                                     className="w-full rounded-xl border border-[#3E3234] bg-[#191415] px-3.5 py-2.5 text-sm text-white placeholder-[#786D6B] outline-none focus:border-[#E8A598]"
                                 />
+                            </div>
+
+                            <div>
+                                <label className="mb-1 block text-xs font-semibold text-[#D1C7BD]">
+                                    Kategori Menu
+                                </label>
+                                <select
+                                    value={prodCategoryId}
+                                    onChange={(e) => setProdCategoryId(e.target.value)}
+                                    className="w-full rounded-xl border border-[#3E3234] bg-[#191415] px-3.5 py-2.5 text-xs text-white outline-none focus:border-[#E8A598]"
+                                >
+                                    <option value="">-- Tanpa Kategori (Lainnya) --</option>
+                                    {categoriesList.map((cat) => (
+                                        <option key={cat.id} value={cat.id}>
+                                            {cat.icon ? `${cat.icon} ` : ""}{cat.name}
+                                        </option>
+                                    ))}
+                                </select>
                             </div>
 
                             <div>
@@ -3183,6 +3367,135 @@ export default function AdminDashboardPage() {
                                 />
                             </div>
 
+                            {/* ── Sasaran Pengguna: Semua Pelanggan vs Pelanggan Pilihan ── */}
+                            <div className="rounded-2xl border border-[#3E3234] bg-[#191415] p-3.5 space-y-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-white mb-0.5">
+                                        Target Pengguna Kupon *
+                                    </label>
+                                    <p className="text-[11px] text-[#A89F97]">
+                                        Tentukan apakah promo berlaku untuk semua pelanggan atau hanya pelanggan tertentu.
+                                    </p>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setPromoTargetType("all")}
+                                        className={`flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition ${promoTargetType === "all"
+                                            ? "border-emerald-500 bg-emerald-950/60 text-emerald-300"
+                                            : "border-[#3E3234] bg-[#221B1D] text-[#A89F97] hover:text-white"
+                                            }`}
+                                    >
+                                        <span>🌐</span> Semua Pelanggan
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setPromoTargetType("specific");
+                                            if (customerList.length === 0) fetchCustomers();
+                                        }}
+                                        className={`flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition ${promoTargetType === "specific"
+                                            ? "border-amber-500 bg-amber-950/60 text-amber-300"
+                                            : "border-[#3E3234] bg-[#221B1D] text-[#A89F97] hover:text-white"
+                                            }`}
+                                    >
+                                        <span>🎯</span> Pelanggan Pilihan
+                                    </button>
+                                </div>
+
+                                {promoTargetType === "specific" && (
+                                    <div className="mt-2 space-y-2 pt-2 border-t border-[#2E2527]">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <span className="text-[11px] font-semibold text-amber-300">
+                                                Pilih Pelanggan ({promoSelectedCustomerIds.length} dipilih):
+                                            </span>
+                                            <div className="flex items-center gap-2 text-[10px]">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setPromoSelectedCustomerIds(customerList.map((c) => c.id))}
+                                                    className="text-[#E8A598] hover:underline"
+                                                >
+                                                    Pilih Semua
+                                                </button>
+                                                <span className="text-[#524245]">|</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setPromoSelectedCustomerIds([])}
+                                                    className="text-[#A89F97] hover:underline"
+                                                >
+                                                    Reset
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* Filter Search Customer */}
+                                        <input
+                                            type="text"
+                                            value={promoCustomerSearch}
+                                            onChange={(e) => setPromoCustomerSearch(e.target.value)}
+                                            placeholder="Cari nama atau WhatsApp pelanggan..."
+                                            className="w-full rounded-lg border border-[#3E3234] bg-[#221B1D] px-3 py-1.5 text-xs text-white placeholder-[#78686A] outline-none focus:border-[#E8A598]"
+                                        />
+
+                                        {/* List Pelanggan */}
+                                        <div className="max-h-44 overflow-y-auto space-y-1 rounded-xl border border-[#2E2527] bg-[#140F10] p-1.5">
+                                            {customersLoading ? (
+                                                <p className="text-center text-[11px] text-[#A89F97] py-3">Memuat data pelanggan...</p>
+                                            ) : customerList.length === 0 ? (
+                                                <p className="text-center text-[11px] text-[#A89F97] py-3">Belum ada pelanggan terdaftar.</p>
+                                            ) : (
+                                                customerList
+                                                    .filter((c) => {
+                                                        if (!promoCustomerSearch.trim()) return true;
+                                                        const q = promoCustomerSearch.toLowerCase();
+                                                        return (
+                                                            c.name?.toLowerCase().includes(q) ||
+                                                            c.phone?.toLowerCase().includes(q)
+                                                        );
+                                                    })
+                                                    .map((c) => {
+                                                        const isChecked = promoSelectedCustomerIds.includes(c.id);
+                                                        return (
+                                                            <label
+                                                                key={c.id}
+                                                                className={`flex items-center justify-between rounded-lg p-2 text-xs transition cursor-pointer select-none ${isChecked
+                                                                    ? "bg-amber-950/40 border border-amber-500/30 text-white"
+                                                                    : "hover:bg-[#1E1719] text-[#D1C7BD]"
+                                                                    }`}
+                                                            >
+                                                                <div className="flex items-center gap-2.5 min-w-0">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={isChecked}
+                                                                        onChange={() => {
+                                                                            if (isChecked) {
+                                                                                setPromoSelectedCustomerIds(promoSelectedCustomerIds.filter((id) => id !== c.id));
+                                                                            } else {
+                                                                                setPromoSelectedCustomerIds([...promoSelectedCustomerIds, c.id]);
+                                                                            }
+                                                                        }}
+                                                                        className="h-3.5 w-3.5 rounded border-[#3E3234] accent-amber-500"
+                                                                    />
+                                                                    <div className="truncate">
+                                                                        <span className="font-semibold block truncate text-xs">{c.name}</span>
+                                                                        <span className="text-[10px] text-[#A89F97]">{c.phone}</span>
+                                                                    </div>
+                                                                </div>
+                                                                {isChecked && (
+                                                                    <span className="text-[10px] font-bold text-amber-400 shrink-0 ml-2">
+                                                                        ✓ Terpilih
+                                                                    </span>
+                                                                )}
+                                                            </label>
+                                                        );
+                                                    })
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div>
                                     <label className="block text-xs font-semibold text-[#D1C7BD] mb-1">
@@ -3235,6 +3548,284 @@ export default function AdminDashboardPage() {
                                     className="rounded-xl bg-[#7A2E3A] px-5 py-2 text-xs font-bold text-white transition hover:bg-[#60232E] disabled:opacity-50"
                                 >
                                     {savingPromo ? "Menyimpan..." : editingPromo ? "Simpan Perubahan" : "Buat Promo"}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* ── MODAL KELOLA KATEGORI MENU ─────────────────────────────────── */}
+            {showCategoryManager && (
+                <div
+                    className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4 backdrop-blur-sm"
+                    onClick={() => setShowCategoryManager(false)}
+                >
+                    <div
+                        className="relative max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-t-3xl sm:rounded-3xl border border-[#3E3234] bg-[#221B1D] p-5 sm:p-6 shadow-2xl text-white"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between border-b border-[#2E2527] pb-3">
+                            <div className="flex items-center gap-2">
+                                <span className="text-xl">📁</span>
+                                <div>
+                                    <h3 className="text-base font-bold text-white">
+                                        Manajemen Kategori Menu
+                                    </h3>
+                                    <p className="text-[11px] text-[#A89F97]">
+                                        Kelola pengelompokan menu hidangan Ava Eats untuk kemudahan pelanggan.
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowCategoryManager(false)}
+                                className="rounded-lg p-1 text-[#A89F97] hover:bg-[#2E2527] hover:text-white"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <div className="mt-4 flex items-center justify-between">
+                            <span className="text-xs font-semibold text-[#D1C7BD]">
+                                Total: {categoriesList.length} Kategori
+                            </span>
+                            <button
+                                type="button"
+                                onClick={openAddCategoryModal}
+                                className="inline-flex items-center gap-1.5 rounded-xl bg-[#7A2E3A] px-3 py-1.5 text-xs font-bold text-white transition hover:bg-[#913745]"
+                            >
+                                <span>+</span> Tambah Kategori
+                            </button>
+                        </div>
+
+                        <div className="mt-3 space-y-2.5 max-h-96 overflow-y-auto pr-1">
+                            {categoriesLoading ? (
+                                <p className="py-8 text-center text-xs text-[#A89F97]">Memuat kategori...</p>
+                            ) : categoriesList.length === 0 ? (
+                                <div className="rounded-2xl border border-[#2E2527] bg-[#191415] p-8 text-center text-xs text-[#A89F97]">
+                                    Belum ada kategori menu. Klik tombol &ldquo;+ Tambah Kategori&rdquo; di atas.
+                                </div>
+                            ) : (
+                                categoriesList.map((cat) => (
+                                    <div
+                                        key={cat.id}
+                                        className="flex items-center justify-between gap-3 rounded-2xl border border-[#3E3234] bg-[#191415] p-3.5 transition hover:border-[#524245]"
+                                    >
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#2A2022] text-xl border border-[#3E3234]">
+                                                {cat.icon || "🍽️"}
+                                            </span>
+                                            <div className="min-w-0">
+                                                <div className="flex items-center gap-2">
+                                                    <h4 className="text-sm font-bold text-white truncate">
+                                                        {cat.name}
+                                                    </h4>
+                                                    <span className="rounded-full bg-[#2A2022] border border-[#3E3234] px-2 py-0.5 text-[10px] font-bold text-[#E8A598]">
+                                                        {cat.product_count} Menu
+                                                    </span>
+                                                </div>
+                                                {cat.description && (
+                                                    <p className="text-[11px] text-[#A89F97] truncate mt-0.5">
+                                                        {cat.description}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                            <button
+                                                type="button"
+                                                onClick={() => openEditCategoryModal(cat)}
+                                                className="rounded-lg border border-[#3E3234] bg-[#221B1D] px-2.5 py-1.5 text-xs font-semibold text-[#D1C7BD] hover:bg-[#2E2527] hover:text-white transition"
+                                                title="Edit nama kategori & pilih menu"
+                                            >
+                                                ✏️ Edit & Atur Menu
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleDeleteCategory(cat)}
+                                                className="rounded-lg border border-red-500/30 bg-red-950/20 px-2 py-1.5 text-xs text-red-400 hover:bg-red-950/40 transition"
+                                                title="Hapus Kategori"
+                                            >
+                                                🗑️
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+
+                        <div className="mt-5 border-t border-[#2E2527] pt-3 text-right">
+                            <button
+                                type="button"
+                                onClick={() => setShowCategoryManager(false)}
+                                className="rounded-xl border border-[#3E3234] px-4 py-2 text-xs font-semibold text-[#A89F97] hover:bg-[#2E2527] hover:text-white"
+                            >
+                                Tutup
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── MODAL TAMBAH / EDIT KATEGORI BESERTA PILIH MENU ──────────────── */}
+            {showCategoryModal && (
+                <div
+                    className="fixed inset-0 z-60 flex items-end sm:items-center justify-center bg-black/80 p-0 sm:p-4 backdrop-blur-sm"
+                    onClick={() => !savingCategory && setShowCategoryModal(false)}
+                >
+                    <div
+                        className="relative max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl sm:rounded-3xl border border-[#3E3234] bg-[#221B1D] p-5 sm:p-6 shadow-2xl text-white"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between border-b border-[#2E2527] pb-3">
+                            <h3 className="text-base font-bold text-white flex items-center gap-2">
+                                <span>{editingCategory ? "✏️ Edit Kategori Menu" : "✨ Buat Kategori Baru"}</span>
+                            </h3>
+                            <button
+                                type="button"
+                                onClick={() => setShowCategoryModal(false)}
+                                className="rounded-lg p-1 text-[#A89F97] hover:bg-[#2E2527] hover:text-white"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSaveCategory} className="mt-4 space-y-3.5">
+                            <div className="grid grid-cols-4 gap-3">
+                                <div>
+                                    <label className="block text-xs font-semibold text-[#D1C7BD] mb-1">
+                                        Emoji/Icon
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={categoryFormIcon}
+                                        onChange={(e) => setCategoryFormIcon(e.target.value)}
+                                        placeholder="🍽️"
+                                        className="w-full text-center rounded-xl border border-[#3E3234] bg-[#191415] px-2 py-2 text-base text-white outline-none focus:border-[#E8A598]"
+                                    />
+                                </div>
+                                <div className="col-span-3">
+                                    <label className="block text-xs font-semibold text-[#D1C7BD] mb-1">
+                                        Nama Kategori *
+                                    </label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={categoryFormName}
+                                        onChange={(e) => setCategoryFormName(e.target.value)}
+                                        placeholder="Contoh: Paket Nasi & Lauk"
+                                        className="w-full rounded-xl border border-[#3E3234] bg-[#191415] px-3.5 py-2 text-xs text-white outline-none focus:border-[#E8A598]"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-semibold text-[#D1C7BD] mb-1">
+                                    Deskripsi Singkat (Opsional)
+                                </label>
+                                <input
+                                    type="text"
+                                    value={categoryFormDescription}
+                                    onChange={(e) => setCategoryFormDescription(e.target.value)}
+                                    placeholder="Contoh: Menu hidangan lezat siap santap untuk balita"
+                                    className="w-full rounded-xl border border-[#3E3234] bg-[#191415] px-3.5 py-2 text-xs text-white outline-none focus:border-[#E8A598]"
+                                />
+                            </div>
+
+                            {/* Bagian Pilih Menu untuk Kategori Ini */}
+                            <div className="rounded-2xl border border-[#3E3234] bg-[#191415] p-3.5 space-y-2.5">
+                                <div className="flex items-center justify-between gap-2">
+                                    <div>
+                                        <span className="block text-xs font-bold text-white">
+                                            Pilih Menu untuk Kategori Ini
+                                        </span>
+                                        <span className="text-[11px] text-[#A89F97]">
+                                            {categoryFormProductIds.length} dari {products.length} menu dipilih
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-2 text-[10px]">
+                                        <button
+                                            type="button"
+                                            onClick={() => setCategoryFormProductIds(products.map((p) => p.id))}
+                                            className="text-[#E8A598] hover:underline"
+                                        >
+                                            Pilih Semua
+                                        </button>
+                                        <span className="text-[#524245]">|</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setCategoryFormProductIds([])}
+                                            className="text-[#A89F97] hover:underline"
+                                        >
+                                            Reset
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="max-h-52 overflow-y-auto space-y-1.5 rounded-xl border border-[#2E2527] bg-[#140F10] p-2">
+                                    {products.length === 0 ? (
+                                        <p className="text-center text-[11px] text-[#A89F97] py-3">Belum ada menu produk.</p>
+                                    ) : (
+                                        products.map((p) => {
+                                            const isChecked = categoryFormProductIds.includes(p.id);
+                                            return (
+                                                <label
+                                                    key={p.id}
+                                                    className={`flex items-center justify-between rounded-lg p-2 text-xs transition cursor-pointer select-none ${isChecked
+                                                        ? "bg-[#7A2E3A]/30 border border-[#7A2E3A]/50 text-white"
+                                                        : "hover:bg-[#1E1719] text-[#D1C7BD]"
+                                                        }`}
+                                                >
+                                                    <div className="flex items-center gap-2.5 min-w-0">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isChecked}
+                                                            onChange={() => {
+                                                                if (isChecked) {
+                                                                    setCategoryFormProductIds(
+                                                                        categoryFormProductIds.filter((id) => id !== p.id)
+                                                                    );
+                                                                } else {
+                                                                    setCategoryFormProductIds([...categoryFormProductIds, p.id]);
+                                                                }
+                                                            }}
+                                                            className="h-3.5 w-3.5 rounded border-[#3E3234] accent-[#7A2E3A]"
+                                                        />
+                                                        <div className="truncate">
+                                                            <span className="font-semibold block truncate text-xs">{p.name}</span>
+                                                            <span className="text-[10px] text-emerald-400">
+                                                                Rp {p.price?.toLocaleString("id-ID")}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    {isChecked && (
+                                                        <span className="text-[10px] font-bold text-[#E8A598] shrink-0 ml-2">
+                                                            ✓ Termasuk
+                                                        </span>
+                                                    )}
+                                                </label>
+                                            );
+                                        })
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="mt-5 flex items-center justify-end gap-2 border-t border-[#2E2527] pt-4">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowCategoryModal(false)}
+                                    className="rounded-xl border border-[#3E3234] px-4 py-2 text-xs font-semibold text-[#A89F97] hover:bg-[#2E2527] hover:text-white"
+                                >
+                                    Batal
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={savingCategory}
+                                    className="rounded-xl bg-[#7A2E3A] px-5 py-2 text-xs font-bold text-white transition hover:bg-[#60232E] disabled:opacity-50"
+                                >
+                                    {savingCategory ? "Menyimpan..." : editingCategory ? "Simpan Perubahan" : "Buat Kategori"}
                                 </button>
                             </div>
                         </form>
