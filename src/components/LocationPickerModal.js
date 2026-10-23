@@ -230,15 +230,15 @@ export default function LocationPickerModal({
 
     return (
         <div
-            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 p-0 sm:p-4 backdrop-blur-xs select-none"
+            className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/80 p-0 sm:p-4 backdrop-blur-xs select-none"
             onClick={onClose}
         >
             <div
-                className="relative flex flex-col w-full max-w-2xl overflow-hidden rounded-t-3xl sm:rounded-3xl border border-[#E8D6CE] bg-[#FAF7F2] shadow-2xl"
+                className="relative flex flex-col w-full max-w-2xl max-h-[92dvh] sm:max-h-[90vh] overflow-hidden rounded-t-3xl sm:rounded-3xl border border-[#E8D6CE] bg-[#FAF7F2] shadow-2xl"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Header Modal & Search Bar */}
-                <div className="border-b border-[#E8D6CE] bg-white px-4 sm:px-5 py-3 space-y-2.5 z-20">
+                <div className="border-b border-[#E8D6CE] bg-white px-4 sm:px-5 py-3 space-y-2.5 z-20 shrink-0">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                             <span className="text-xl">📍</span>
@@ -291,8 +291,8 @@ export default function LocationPickerModal({
                     </form>
                 </div>
 
-                {/* Map Area dengan Fixed Height Explicit (Mencegah Collapsing/Freeze) */}
-                <div className="relative w-full h-[50vh] min-h-[360px] sm:h-[460px] bg-[#E5E0D8] overflow-hidden">
+                {/* Map Area dengan Responsive Height (Mencegah Collapsing/Overflow di Layar HP) */}
+                <div className="relative w-full h-[38dvh] min-h-[250px] sm:h-[440px] bg-[#E5E0D8] overflow-hidden">
                     {/* Leaflet container */}
                     <div ref={mapContainerRef} className="h-full w-full" />
 
@@ -333,7 +333,7 @@ export default function LocationPickerModal({
                 </div>
 
                 {/* Bottom Bar: Alamat Terdeteksi + Konfirmasi */}
-                <div className="border-t border-[#E8D6CE] bg-white p-4 sm:p-5 z-20 space-y-3">
+                <div className="border-t border-[#E8D6CE] bg-white p-4 sm:p-5 pb-6 sm:pb-5 z-20 space-y-3 shrink-0">
                     <div className="rounded-2xl border border-[#E8D6CE] bg-[#FAF7F2] p-3">
                         <div className="flex items-start gap-2.5">
                             <span className="text-base shrink-0 mt-0.5">🏡</span>

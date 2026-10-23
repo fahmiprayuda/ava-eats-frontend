@@ -388,11 +388,11 @@ function AddressManager() {
                 {/* MODAL FORM TAMBAH / UBAH ALAMAT */}
                 {showForm && (
                     <div
-                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+                        className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4 backdrop-blur-xs"
                         onClick={() => setShowForm(false)}
                     >
                         <div
-                            className="relative max-h-[90vh] w-full max-w-[480px] overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl"
+                            className="relative max-h-[92dvh] sm:max-h-[90vh] w-full max-w-[480px] overflow-y-auto rounded-t-3xl sm:rounded-3xl bg-white p-5 sm:p-6 pb-8 sm:pb-6 shadow-2xl"
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div className="flex items-center justify-between border-b border-[#E8D6CE] pb-3">

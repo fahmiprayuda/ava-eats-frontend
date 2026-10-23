@@ -3215,7 +3215,7 @@ export default function AdminDashboardPage() {
                     onClick={() => !savingPromo && setShowPromoModal(false)}
                 >
                     <div
-                        className="relative max-h-[90vh] w-full max-w-[520px] overflow-y-auto rounded-t-3xl sm:rounded-3xl border border-[#3E3234] bg-[#221B1D] p-5 sm:p-6 shadow-2xl text-white"
+                        className="relative max-h-[90dvh] sm:max-h-[90vh] w-full max-w-[520px] overflow-y-auto rounded-t-3xl sm:rounded-3xl border border-[#3E3234] bg-[#221B1D] p-5 sm:p-6 pb-8 sm:pb-6 shadow-2xl text-white"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="flex items-center justify-between border-b border-[#2E2527] pb-3">
@@ -3562,7 +3562,7 @@ export default function AdminDashboardPage() {
                     onClick={() => setShowCategoryManager(false)}
                 >
                     <div
-                        className="relative max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-t-3xl sm:rounded-3xl border border-[#3E3234] bg-[#221B1D] p-5 sm:p-6 shadow-2xl text-white"
+                        className="relative max-h-[90dvh] sm:max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-t-3xl sm:rounded-3xl border border-[#3E3234] bg-[#221B1D] p-5 sm:p-6 pb-8 sm:pb-6 shadow-2xl text-white"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="flex items-center justify-between border-b border-[#2E2527] pb-3">
@@ -3640,7 +3640,7 @@ export default function AdminDashboardPage() {
                                                 className="rounded-lg border border-[#3E3234] bg-[#221B1D] px-2.5 py-1.5 text-xs font-semibold text-[#D1C7BD] hover:bg-[#2E2527] hover:text-white transition"
                                                 title="Edit nama kategori & pilih menu"
                                             >
-                                                ✏️ Edit & Atur Menu
+                                                <span>✏️ </span><span className="hidden sm:inline">Edit & Atur Menu</span><span className="sm:hidden">Atur</span>
                                             </button>
                                             <button
                                                 type="button"
@@ -3676,7 +3676,7 @@ export default function AdminDashboardPage() {
                     onClick={() => !savingCategory && setShowCategoryModal(false)}
                 >
                     <div
-                        className="relative max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl sm:rounded-3xl border border-[#3E3234] bg-[#221B1D] p-5 sm:p-6 shadow-2xl text-white"
+                        className="relative max-h-[92dvh] sm:max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-3xl sm:rounded-3xl border border-[#3E3234] bg-[#221B1D] p-5 sm:p-6 pb-8 sm:pb-6 shadow-2xl text-white"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="flex items-center justify-between border-b border-[#2E2527] pb-3">
@@ -3693,10 +3693,10 @@ export default function AdminDashboardPage() {
                         </div>
 
                         <form onSubmit={handleSaveCategory} className="mt-4 space-y-3.5">
-                            <div className="grid grid-cols-4 gap-3">
-                                <div>
+                            <div className="flex gap-2.5">
+                                <div className="w-16 shrink-0">
                                     <label className="block text-xs font-semibold text-[#D1C7BD] mb-1">
-                                        Emoji/Icon
+                                        Icon
                                     </label>
                                     <input
                                         type="text"
@@ -3706,7 +3706,7 @@ export default function AdminDashboardPage() {
                                         className="w-full text-center rounded-xl border border-[#3E3234] bg-[#191415] px-2 py-2 text-base text-white outline-none focus:border-[#E8A598]"
                                     />
                                 </div>
-                                <div className="col-span-3">
+                                <div className="flex-1 min-w-0">
                                     <label className="block text-xs font-semibold text-[#D1C7BD] mb-1">
                                         Nama Kategori *
                                     </label>
