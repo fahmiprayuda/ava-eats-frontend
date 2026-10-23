@@ -25,6 +25,12 @@ export default function ThermalReceiptModal({ order, onClose }) {
         : "-";
 
     const isDelivery = (order.fulfillment_method || order.order_type) === "delivery";
+    const status = (order.status || "").toLowerCase();
+    const isCancelled = status === "cancelled";
+    const isPending = status === "pending";
+    const isRefunded = order.refund_status === "refunded";
+    const isRefundPending = order.refund_status === "refund_pending";
+
     const items = order.items || [];
     const itemsSubtotal = items.reduce(
         (sum, it) => sum + (it.price || 0) * (it.quantity || 1),
@@ -120,6 +126,23 @@ export default function ThermalReceiptModal({ order, onClose }) {
                                 WA: 0822-1323-2456 • Cibinong, Bogor
                             </p>
                         </div>
+
+                        {/* Banner Peringatan Jika Pesanan Dibatalkan */}
+                        {isCancelled && (
+                            <div className="my-1.5 border-2 border-dashed border-red-600 bg-red-50 p-1.5 text-center text-red-700">
+                                <p className="font-black text-[11px] tracking-wider uppercase">
+                                    *** PESANAN DIBATALKAN ***
+                                </p>
+                                <p className="text-[8px] font-bold mt-0.5">
+                                    STRUK BATAL - BUKAN BUKTI TRANSAKSI
+                                </p>
+                                {order.cancellation_reason && (
+                                    <p className="text-[8px] italic mt-0.5 text-black">
+                                        Alasan: &ldquo;{order.cancellation_reason}&rdquo;
+                                    </p>
+                                )}
+                            </div>
+                        )}
 
                         {/* Garis Pemisah */}
                         <div className="border-b-2 border-dashed border-black my-2" />
@@ -246,10 +269,24 @@ export default function ThermalReceiptModal({ order, onClose }) {
                                 <span>TOTAL AKHIR:</span>
                                 <span>Rp {grandTotal.toLocaleString("id-ID")}</span>
                             </div>
-                            <div className="flex justify-between text-[10px] text-gray-800 pt-0.5">
-                                <span>STATUS BAYAR:</span>
-                                <span className="font-bold uppercase">
-                                    ✓ LUNAS (PAID)
+                            <div className="flex justify-between items-center text-[10px] pt-1 border-t border-dotted border-gray-400">
+                                <span>STATUS PESANAN:</span>
+                                <span className={`font-black uppercase text-[10px] ${
+                                    isCancelled
+                                        ? "text-red-700 font-extrabold"
+                                        : isPending
+                                        ? "text-amber-700"
+                                        : "text-black"
+                                }`}>
+                                    {isCancelled
+                                        ? "✗ BATAL (CANCELLED)"
+                                        : isRefunded
+                                        ? "↩ REFUND SELESAI"
+                                        : isRefundPending
+                                        ? "⏳ PROSES REFUND"
+                                        : isPending
+                                        ? "⏳ MENUNGGU BAYAR"
+                                        : "✓ LUNAS (PAID)"}
                                 </span>
                             </div>
                         </div>
@@ -259,12 +296,25 @@ export default function ThermalReceiptModal({ order, onClose }) {
 
                         {/* Instruksi Handling Frozen Food & Footer */}
                         <div className="text-center text-[9px] space-y-0.5 pt-1">
-                            <p className="font-black text-[10px] tracking-wide uppercase">
-                                ❄️ FROZEN FOOD & ICE PACK ❄️
-                            </p>
-                            <p className="leading-snug">
-                                Segera simpan di dalam freezer (-18°C) begitu paket diterima.
-                            </p>
+                            {isCancelled ? (
+                                <div className="space-y-0.5 py-1">
+                                    <p className="font-black text-red-700 uppercase tracking-wide">
+                                        ⚠️ PESANAN INI SUDAH DIBATALKAN ⚠️
+                                    </p>
+                                    <p className="text-gray-600">
+                                        Barang tidak diserahkan ke kurir atau pelanggan.
+                                    </p>
+                                </div>
+                            ) : (
+                                <>
+                                    <p className="font-black text-[10px] tracking-wide uppercase">
+                                        ❄️ FROZEN FOOD & ICE PACK ❄️
+                                    </p>
+                                    <p className="leading-snug">
+                                        Segera simpan di dalam freezer (-18°C) begitu paket diterima.
+                                    </p>
+                                </>
+                            )}
                             <p className="pt-2 font-semibold">
                                 Terima kasih sudah mempercayakan Ava Eats! ❤️
                             </p>

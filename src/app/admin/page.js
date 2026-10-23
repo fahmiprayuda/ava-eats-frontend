@@ -93,6 +93,7 @@ export default function AdminDashboardPage() {
     const [customerFormPhone, setCustomerFormPhone] = useState("");
     const [customerFormPassword, setCustomerFormPassword] = useState("");
     const [savingCustomer, setSavingCustomer] = useState(false);
+    const [selectedHistoryCustomer, setSelectedHistoryCustomer] = useState(null);
 
     // Auto Refresh state (10 detik)
     const [autoRefresh, setAutoRefresh] = useState(true);
@@ -827,6 +828,32 @@ export default function AdminDashboardPage() {
         setShowPromoModal(true);
     }
 
+    function formatToInputDate(val) {
+        if (!val) return "";
+        if (typeof val === "string") {
+            if (!val.endsWith("Z") && !val.includes("+")) {
+                return val.substring(0, 16);
+            }
+            const d = new Date(val);
+            if (isNaN(d.getTime())) return "";
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, "0");
+            const day = String(d.getDate()).padStart(2, "0");
+            const hours = String(d.getHours()).padStart(2, "0");
+            const minutes = String(d.getMinutes()).padStart(2, "0");
+            return `${year}-${month}-${day}T${hours}:${minutes}`;
+        }
+        return "";
+    }
+
+    function formatLocalInputToISO(val) {
+        if (!val) return null;
+        if (val.length === 16) {
+            return `${val}:00`;
+        }
+        return val;
+    }
+
     function openEditPromoModal(promo) {
         setEditingPromo(promo);
         setPromoCode(promo.code || "");
@@ -838,8 +865,8 @@ export default function AdminDashboardPage() {
         setPromoMinOrderAmount(promo.min_order_amount ?? 0);
         setPromoUsageLimit(promo.usage_limit ?? "");
         setPromoUsageLimitPerUser(promo.usage_limit_per_user ?? 1);
-        setPromoStartDate(promo.start_date ? promo.start_date.substring(0, 16) : "");
-        setPromoEndDate(promo.end_date ? promo.end_date.substring(0, 16) : "");
+        setPromoStartDate(formatToInputDate(promo.start_date));
+        setPromoEndDate(formatToInputDate(promo.end_date));
         setPromoIsActive(promo.is_active ?? true);
         setShowPromoModal(true);
     }
@@ -872,8 +899,8 @@ export default function AdminDashboardPage() {
                 min_order_amount: Number(promoMinOrderAmount) || 0,
                 usage_limit: promoUsageLimit ? Number(promoUsageLimit) : null,
                 usage_limit_per_user: Number(promoUsageLimitPerUser) || 1,
-                start_date: promoStartDate ? new Date(promoStartDate).toISOString() : null,
-                end_date: promoEndDate ? new Date(promoEndDate).toISOString() : null,
+                start_date: formatLocalInputToISO(promoStartDate),
+                end_date: formatLocalInputToISO(promoEndDate),
                 is_active: promoIsActive,
             };
 
@@ -1785,7 +1812,7 @@ export default function AdminDashboardPage() {
                                                             <span>Periode:</span>
                                                             <span className="text-[#A89F97]">
                                                                 {promo.end_date
-                                                                    ? `s.d. ${new Date(promo.end_date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}`
+                                                                    ? `s.d. ${new Date(promo.end_date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}`
                                                                     : "Selalu Aktif"}
                                                             </span>
                                                         </div>
@@ -2103,11 +2130,15 @@ export default function AdminDashboardPage() {
                                                         </div>
 
                                                         {/* Customer summary */}
-                                                        <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-[#1A1416] p-2.5 text-center">
+                                                        <div
+                                                            onClick={() => setSelectedHistoryCustomer(cust)}
+                                                            className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-[#1A1416] p-2.5 text-center cursor-pointer hover:bg-[#251D20] transition border border-transparent hover:border-[#3E3234]"
+                                                            title="Klik untuk melihat riwayat pesanan pelanggan ini"
+                                                        >
                                                             <div>
                                                                 <span className="block text-[10px] text-[#A89F97]">Total Pesanan</span>
-                                                                <strong className="text-xs text-white">
-                                                                    {cust.orders_count || 0} Order
+                                                                <strong className="text-xs text-white hover:underline">
+                                                                    {cust.orders_count || 0} Order ↗
                                                                 </strong>
                                                             </div>
                                                             <div>
@@ -2124,10 +2155,18 @@ export default function AdminDashboardPage() {
                                                         <div className="flex items-center gap-1.5">
                                                             <button
                                                                 type="button"
-                                                                onClick={() => openEditCustomerModal(cust)}
-                                                                className="rounded-lg border border-[#3E3234] px-2.5 py-1 text-xs font-semibold text-[#D1C7BD] hover:bg-[#2E2527] transition"
+                                                                onClick={() => setSelectedHistoryCustomer(cust)}
+                                                                className="rounded-lg border border-[#4E3539] bg-[#2A1D20] px-2 py-1 text-xs font-bold text-[#E8A598] hover:bg-[#3A252A] transition"
+                                                                title="Lihat Riwayat Pesanan Customer"
                                                             >
-                                                                ✏️ Edit / Reset
+                                                                📦 Riwayat
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => openEditCustomerModal(cust)}
+                                                                className="rounded-lg border border-[#3E3234] px-2 py-1 text-xs font-semibold text-[#D1C7BD] hover:bg-[#2E2527] transition"
+                                                            >
+                                                                ✏️ Edit
                                                             </button>
                                                             <button
                                                                 type="button"
@@ -2801,6 +2840,189 @@ export default function AdminDashboardPage() {
                     </div>
                 </div>
             )}
+
+            {/* ── MODAL RIWAYAT PESANAN CUSTOMER ──────────────────────────── */}
+            {selectedHistoryCustomer && (() => {
+                const customerOrders = orders.filter(
+                    (o) => Number(o.customer_id) === Number(selectedHistoryCustomer.id)
+                );
+                const totalCustomerSpent = customerOrders
+                    .filter((o) => ["paid", "processing", "shipped", "delivered", "completed", "done"].includes(String(o.status || "").toLowerCase()))
+                    .reduce((sum, o) => sum + (o.grand_total || o.total_amount || 0), 0);
+
+                return (
+                    <div
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3 sm:p-4 backdrop-blur-sm"
+                        onClick={() => setSelectedHistoryCustomer(null)}
+                    >
+                        <div
+                            className="relative max-h-[90vh] w-full max-w-2xl flex flex-col overflow-hidden rounded-2xl sm:rounded-3xl border border-[#3E3234] bg-[#221B1D] shadow-2xl text-white"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            {/* Modal Header */}
+                            <div className="flex items-center justify-between border-b border-[#2E2527] px-5 py-4 bg-[#1F191A]">
+                                <div className="flex items-center gap-3">
+                                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-950/60 text-base font-bold text-emerald-300 ring-1 ring-emerald-500/40">
+                                        👤
+                                    </div>
+                                    <div>
+                                        <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                                            {selectedHistoryCustomer.name}
+                                            <span className="text-[11px] font-normal text-[#A89F97]">
+                                                (#{selectedHistoryCustomer.id})
+                                            </span>
+                                        </h3>
+                                        <p className="text-xs text-[#A89F97] font-mono">
+                                            📱 {selectedHistoryCustomer.phone}
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedHistoryCustomer(null)}
+                                    className="rounded-lg p-1.5 text-sm text-[#A89F97] hover:bg-[#2E2527] hover:text-white"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+
+                            {/* Summary Stats bar */}
+                            <div className="grid grid-cols-2 gap-3 border-b border-[#2E2527] bg-[#191415] px-5 py-3">
+                                <div className="text-center sm:text-left">
+                                    <span className="text-[10px] text-[#A89F97] uppercase tracking-wider block">
+                                        Total Riwayat Pesanan
+                                    </span>
+                                    <strong className="text-sm font-bold text-white">
+                                        {customerOrders.length} Order
+                                    </strong>
+                                </div>
+                                <div className="text-center sm:text-right">
+                                    <span className="text-[10px] text-[#A89F97] uppercase tracking-wider block">
+                                        Total Belanja Valid (Lunas)
+                                    </span>
+                                    <strong className="text-sm font-bold text-emerald-400">
+                                        {formatRupiah(totalCustomerSpent)}
+                                    </strong>
+                                </div>
+                            </div>
+
+                            {/* Orders List Content */}
+                            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3">
+                                {customerOrders.length === 0 ? (
+                                    <div className="rounded-xl border border-[#2E2527] bg-[#1A1416] p-8 text-center text-xs text-[#A89F97]">
+                                        <span className="text-2xl block mb-1">📦</span>
+                                        Pelanggan ini belum memiliki riwayat pesanan.
+                                    </div>
+                                ) : (
+                                    customerOrders.map((order) => {
+                                        const isCancelled = order.status === "cancelled";
+                                        const isPaid = ["paid", "processing", "shipped", "delivered", "completed", "done"].includes(order.status);
+
+                                        return (
+                                            <div
+                                                key={order.id}
+                                                className={`rounded-xl border p-3.5 transition ${
+                                                    isCancelled
+                                                        ? "border-red-900/40 bg-[#1D1416] opacity-80"
+                                                        : "border-[#342A2C] bg-[#1A1416]"
+                                                }`}
+                                            >
+                                                <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <strong className="font-mono text-xs font-bold text-white">
+                                                            #{order.order_code || order.id}
+                                                        </strong>
+                                                        <span
+                                                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                                                isCancelled
+                                                                    ? "bg-red-950 text-red-400 border border-red-500/30"
+                                                                    : isPaid
+                                                                    ? "bg-emerald-950 text-emerald-400 border border-emerald-500/30"
+                                                                    : "bg-amber-950 text-amber-400 border border-amber-500/30"
+                                                            }`}
+                                                        >
+                                                            {(order.status || "pending").toUpperCase()}
+                                                        </span>
+                                                        <span className="text-[10px] text-[#A89F97]">
+                                                            {order.fulfillment_method === "pickup" ? "🛍️ Pickup" : "🛵 Delivery"}
+                                                        </span>
+                                                    </div>
+
+                                                    <span className="text-[10px] text-[#A89F97]">
+                                                        {order.created_at
+                                                            ? new Date(order.created_at).toLocaleString("id-ID", {
+                                                                  day: "numeric",
+                                                                  month: "short",
+                                                                  year: "numeric",
+                                                                  hour: "2-digit",
+                                                                  minute: "2-digit",
+                                                              })
+                                                            : "-"}
+                                                    </span>
+                                                </div>
+
+                                                {/* Item details */}
+                                                <div className="text-xs text-[#D1C7BD] space-y-1 mb-2.5">
+                                                    {(order.items || []).map((it, idx) => (
+                                                        <div key={idx} className="flex justify-between items-center text-[11px]">
+                                                            <span>
+                                                                <strong className="text-white">{it.quantity}x</strong> {it.product_name || it.name || "Menu"}
+                                                            </span>
+                                                            <span className="text-[#A89F97]">
+                                                                {formatRupiah((it.price || 0) * (it.quantity || 1))}
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+
+                                                {/* Totals & Struk Action */}
+                                                <div className="pt-2 border-t border-[#2E2527] flex items-center justify-between text-xs">
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="text-[11px] text-[#A89F97]">Total:</span>
+                                                        <strong className="font-bold text-[#E8A598]">
+                                                            {formatRupiah(order.grand_total || order.total_amount || 0)}
+                                                        </strong>
+                                                        {order.discount_amount > 0 && (
+                                                            <span className="text-[10px] text-emerald-400">
+                                                                (Diskon {formatRupiah(order.discount_amount)})
+                                                            </span>
+                                                        )}
+                                                    </div>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setPrintOrder(order)}
+                                                        className="rounded-lg border border-[#3E3234] px-2.5 py-1 text-[11px] font-semibold text-[#D1C7BD] hover:bg-[#2E2527] transition flex items-center gap-1"
+                                                    >
+                                                        <span>🖨️</span> Cetak Struk
+                                                    </button>
+                                                </div>
+
+                                                {isCancelled && order.cancellation_reason && (
+                                                    <p className="mt-2 text-[10px] text-red-400 italic bg-red-950/30 p-1.5 rounded-lg border border-red-900/30">
+                                                        Alasan batal: &ldquo;{order.cancellation_reason}&rdquo;
+                                                    </p>
+                                                )}
+                                            </div>
+                                        );
+                                    })
+                                )}
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div className="border-t border-[#2E2527] bg-[#191415] px-5 py-3 flex justify-end">
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedHistoryCustomer(null)}
+                                    className="rounded-xl border border-[#3E3234] px-4 py-1.5 text-xs font-semibold text-[#D1C7BD] hover:bg-[#2E2527]"
+                                >
+                                    Tutup
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
 
             {/* ── MODAL TAMBAH / EDIT PROMO & VOUCHER ─────────────────────── */}
             {showPromoModal && (

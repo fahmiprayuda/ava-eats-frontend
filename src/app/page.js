@@ -326,6 +326,27 @@ export default function Home() {
             menyenangkan.
           </p>
         </div>
+
+        {/* Voucher & Promo Quick Banner */}
+        <Link
+          href="/promos"
+          className="mt-3 flex items-center justify-between rounded-2xl border border-[#E8D6CE] bg-[#FAF4F2] p-3 text-xs text-[#7A2E3A] transition hover:bg-[#F5ECE8] shadow-xs"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-base shrink-0">🎟️</span>
+            <div className="truncate">
+              <strong className="block text-xs font-bold text-[#7A2E3A]">
+                Klaim Kupon & Voucher Promo
+              </strong>
+              <span className="text-[11px] text-[#806B6D]">
+                Diskon s.d. 10% & subsidi ongkir untuk Moms!
+              </span>
+            </div>
+          </div>
+          <span className="shrink-0 text-xs font-extrabold text-[#7A2E3A] underline ml-2">
+            Lihat →
+          </span>
+        </Link>
       </header>
 
       <section className="menu-section">
@@ -859,6 +880,32 @@ export default function Home() {
                     </strong>
                     <span className="text-xs text-[#78686A]">
                       Pantau status & riwayat transaksi
+                    </span>
+                  </div>
+                </div>
+                <span className="text-base font-bold text-[#80515A]">→</span>
+              </Link>
+
+              <Link
+                href="/promos"
+                onClick={() => setMenuOpen(false)}
+                className="flex items-center justify-between rounded-xl border border-[#EEE5DF] bg-white p-3.5 transition hover:bg-[#FAF7F2]"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#FFF3E8] text-lg">
+                    🎟️
+                  </span>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <strong className="block text-sm text-[#2A2620]">
+                        Kupon & Voucher Promo
+                      </strong>
+                      <span className="rounded-full bg-[#7A2E3A] px-1.5 py-0.2 text-[9px] font-extrabold uppercase text-white">
+                        Hemat
+                      </span>
+                    </div>
+                    <span className="text-xs text-[#78686A]">
+                      Cek voucher diskon & subsidi ongkir
                     </span>
                   </div>
                 </div>
