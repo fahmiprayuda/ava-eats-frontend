@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "AVA EATS",
-  description: "Ava Eats is a food delivery service that connects customers with local restaurants and food vendors. Our mission is to provide a convenient and reliable platform for ordering delicious meals from your favorite eateries.",
+  title: "AVA EATS • Homemade Catering & Food Delivery",
+  description: "Ava Eats menghadirkan aneka menu katering harian, paket nasi, dan makanan beku sehat berkualitas untuk keluarga tercinta.",
   icons: {
     icon: [
       { url: "/favicon.png", sizes: "64x64", type: "image/png" },
@@ -25,6 +25,15 @@ export const metadata = {
   },
 };
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+  themeColor: "#FAF7F2",
+};
+
 const MIDTRANS_SNAP_URL =
   process.env.NEXT_PUBLIC_MIDTRANS_IS_PRODUCTION === "true"
     ? "https://app.midtrans.com/snap/snap.js"
@@ -33,7 +42,7 @@ const MIDTRANS_SNAP_URL =
 export default function RootLayout({ children }) {
   return (
     <html
-      lang="en"
+      lang="id"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
