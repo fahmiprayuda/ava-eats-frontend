@@ -40,6 +40,97 @@ export default function Home() {
   const [storeInfoOpen, setStoreInfoOpen] = useState(false);
   const [toast, setToast] = useState("");
   const [activePromos, setActivePromos] = useState([]);
+  const [pendingOrders, setPendingOrders] = useState([]);
+  const [expiredOrders, setExpiredOrders] = useState([]);
+
+  // Fetch pending unpaid & expired orders untuk reminder banner di hero section
+  const loadPendingOrders = useCallback(async () => {
+    try {
+      const token = localStorage.getItem("ava_eats_access_token");
+      if (!token || isTokenExpired(token)) {
+        setPendingOrders([]);
+        setExpiredOrders([]);
+        return;
+      }
+      const data = await apiRequest("/customers/me/orders");
+      if (Array.isArray(data)) {
+        const unpaid = data.filter((o) => {
+          const isCancelled = o.status === "cancelled" || o.payment_status === "cancelled";
+          const isPaid = o.payment_status === "approved" || o.payment_status === "paid" || o.status === "paid";
+          const isExpired = o.payment_status === "expired" || (o.cancellation_reason && /expire|kedaluwarsa/i.test(o.cancellation_reason));
+          const isPending = o.payment_status === "pending" || (!o.payment_status && o.status === "pending");
+          return isPending && !isCancelled && !isPaid && !isExpired;
+        });
+        setPendingOrders(unpaid);
+
+        // Filter expired orders (abaikan yang sudah ditutup/diabaikan oleh customer)
+        let dismissed = [];
+        try {
+          dismissed = JSON.parse(localStorage.getItem("ava_eats_dismissed_expired") || "[]");
+        } catch {
+          dismissed = [];
+        }
+
+        const expired = data.filter((o) => {
+          const isPaid = o.payment_status === "approved" || o.payment_status === "paid" || o.status === "paid";
+          if (isPaid) return false;
+          const isExpired = o.payment_status === "expired" || (o.cancellation_reason && /expire|kedaluwarsa/i.test(o.cancellation_reason));
+          const isDismissed = dismissed.includes(o.id) || dismissed.includes(o.order_code);
+          return isExpired && !isDismissed;
+        });
+        setExpiredOrders(expired);
+      } else {
+        setPendingOrders([]);
+        setExpiredOrders([]);
+      }
+    } catch {
+      setPendingOrders([]);
+      setExpiredOrders([]);
+    }
+  }, []);
+
+  const handleDismissExpiredOrder = useCallback((orderId, e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    try {
+      const stored = JSON.parse(localStorage.getItem("ava_eats_dismissed_expired") || "[]");
+      if (!stored.includes(orderId)) {
+        stored.push(orderId);
+        localStorage.setItem("ava_eats_dismissed_expired", JSON.stringify(stored));
+      }
+      setExpiredOrders((prev) => prev.filter((o) => o.id !== orderId && o.order_code !== orderId));
+      setToast("Pengingat pesanan kedaluwarsa telah disembunyikan.");
+      setTimeout(() => setToast(""), 3500);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("ava_eats_dismiss_updated"));
+      }
+    } catch {
+      setExpiredOrders((prev) => prev.filter((o) => o.id !== orderId && o.order_code !== orderId));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (customer) {
+      loadPendingOrders();
+    } else {
+      setPendingOrders([]);
+      setExpiredOrders([]);
+    }
+
+    window.addEventListener("focus", loadPendingOrders);
+    window.addEventListener("pageshow", loadPendingOrders);
+    window.addEventListener("ava_eats_cart_updated", loadPendingOrders);
+    window.addEventListener("ava_eats_dismiss_updated", loadPendingOrders);
+
+    return () => {
+      window.removeEventListener("focus", loadPendingOrders);
+      window.removeEventListener("pageshow", loadPendingOrders);
+      window.removeEventListener("ava_eats_cart_updated", loadPendingOrders);
+      window.removeEventListener("ava_eats_dismiss_updated", loadPendingOrders);
+    };
+  }, [customer, loadPendingOrders]);
 
   // Fetch promo aktif untuk hero banner & menu drawer
   useEffect(() => {
@@ -101,6 +192,8 @@ export default function Home() {
     localStorage.removeItem("ava_eats_checkout_draft");
     setQuantities({});
     setCustomer(null);
+    setPendingOrders([]);
+    setExpiredOrders([]);
     setMenuOpen(false);
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("ava_eats_cart_updated"));
@@ -366,6 +459,115 @@ export default function Home() {
             menyenangkan.
           </p>
         </div>
+
+        {/* ── UNPAID ORDER REMINDER BANNER (Hero Alert) ────────────────────── */}
+        {pendingOrders.length > 0 && (() => {
+          const latestPending = pendingOrders[0];
+          const totalUnpaid = latestPending.grand_total || latestPending.total_amount;
+          return (
+            <Link
+              href="/orders"
+              className="mt-3 block overflow-hidden rounded-2xl border border-amber-300 bg-gradient-to-r from-amber-50 via-[#FFF9F0] to-orange-50 p-3.5 shadow-xs transition hover:border-amber-400 hover:shadow-md"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-lg text-white shadow-2xs">
+                    ⏳
+                  </span>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-amber-900 border border-amber-200">
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                        Menunggu Pembayaran
+                      </span>
+                      {pendingOrders.length > 1 && (
+                        <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700 border border-red-200">
+                          {pendingOrders.length} Pesanan
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs font-bold text-[#2A2620] truncate">
+                      Pesanan #{latestPending.order_code || latestPending.id} • {formatRupiah(totalUnpaid)}
+                    </p>
+                    <p className="text-[11px] text-[#78686A] mt-0.5 line-clamp-1">
+                      Silakan selesaikan pembayaran agar makanan Moms dapat segera disiapkan dapur.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="shrink-0">
+                  <span className="inline-flex items-center gap-1 rounded-xl bg-[#7A2E3A] px-3 py-1.5 text-xs font-bold text-white shadow-xs transition hover:bg-[#60232E]">
+                    Lanjut Bayar →
+                  </span>
+                </div>
+              </div>
+            </Link>
+          );
+        })()}
+
+        {/* ── EXPIRED ORDER BANNER (Hero Alert dengan Tombol Abaikan/Cancel) ── */}
+        {pendingOrders.length === 0 && expiredOrders.length > 0 && (() => {
+          const latestExpired = expiredOrders[0];
+          const totalAmount = latestExpired.grand_total || latestExpired.total_amount;
+          return (
+            <div
+              className="mt-3 relative block overflow-hidden rounded-2xl border border-rose-300 bg-gradient-to-r from-rose-50 via-[#FFF9F9] to-orange-50 p-3.5 shadow-xs transition hover:border-rose-400 hover:shadow-md"
+            >
+              {/* Tombol Silang / Tutup Pengingat di Pojok Kanan Atas */}
+              <button
+                type="button"
+                onClick={(e) => handleDismissExpiredOrder(latestExpired.id, e)}
+                className="absolute top-2.5 right-2.5 flex h-6 w-6 items-center justify-center rounded-full bg-white/80 text-xs font-bold text-[#8A7778] hover:bg-rose-100 hover:text-rose-900 transition shadow-2xs"
+                title="Abaikan pengingat ini"
+                aria-label="Abaikan pengingat pesanan kedaluwarsa"
+              >
+                ✕
+              </button>
+
+              <div className="flex items-center justify-between gap-3 pr-6 sm:pr-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rose-500 text-lg text-white shadow-2xs">
+                    ⌛
+                  </span>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-rose-900 border border-rose-200">
+                        Waktu Pembayaran Habis
+                      </span>
+                      {expiredOrders.length > 1 && (
+                        <span className="rounded-full bg-rose-200/80 px-1.5 py-0.5 text-[10px] font-bold text-rose-800 border border-rose-300">
+                          {expiredOrders.length} Pesanan
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs font-bold text-[#2A2620] truncate">
+                      Pesanan #{latestExpired.order_code || latestExpired.id} • {formatRupiah(totalAmount)}
+                    </p>
+                    <p className="text-[11px] text-[#78686A] mt-0.5 line-clamp-1">
+                      Batas waktu bayar telah habis. Mau pesan ulang atau abaikan pengingat ini?
+                    </p>
+                  </div>
+                </div>
+
+                <div className="shrink-0 flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={(e) => handleDismissExpiredOrder(latestExpired.id, e)}
+                    className="hidden sm:inline-flex rounded-xl border border-rose-300/80 bg-white/80 px-2.5 py-1.5 text-xs font-semibold text-[#7A3545] hover:bg-rose-50 transition"
+                  >
+                    Abaikan
+                  </button>
+                  <Link
+                    href="/orders"
+                    className="inline-flex items-center gap-1 rounded-xl bg-[#7A2E3A] px-3 py-1.5 text-xs font-bold text-white shadow-xs transition hover:bg-[#60232E]"
+                  >
+                    Pesan Ulang →
+                  </Link>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Voucher & Promo Quick Banner - Hanya tampil jika ada promo yang sedang aktif */}
         {activePromos.length > 0 && (

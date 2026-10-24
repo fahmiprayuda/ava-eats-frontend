@@ -67,18 +67,18 @@ function getOrderLifecycleInfo(order) {
             title: isRefunded
                 ? "Pesanan Dibatalkan — Refund Selesai"
                 : isRefundPending
-                ? "Pesanan Dibatalkan — Refund Diproses"
-                : "Pesanan Dibatalkan",
+                    ? "Pesanan Dibatalkan — Refund Diproses"
+                    : "Pesanan Dibatalkan",
             desc: isRefunded
                 ? `Dana telah berhasil dikembalikan ke rekening/e-wallet Anda. ${order.refund_note ? `Catatan: "${order.refund_note}"` : ""}`
                 : isRefundPending
-                ? `Pengembalian dana sebesar ${formatRupiah(order.grand_total || order.total_amount)} sedang diproses oleh admin Ava Eats.`
-                : (order.cancellation_reason ? `Alasan: "${order.cancellation_reason}"` : "Pesanan ini telah dibatalkan sebelum pembayaran."),
+                    ? `Pengembalian dana sebesar ${formatRupiah(order.grand_total || order.total_amount)} sedang diproses oleh admin Ava Eats.`
+                    : (order.cancellation_reason ? `Alasan: "${order.cancellation_reason}"` : "Pesanan ini telah dibatalkan sebelum pembayaran."),
             badgeBg: isRefunded
                 ? "bg-emerald-50 text-emerald-800 border-emerald-200"
                 : isRefundPending
-                ? "bg-amber-50 text-amber-800 border-amber-300"
-                : "bg-red-50 text-red-700 border-red-200",
+                    ? "bg-amber-50 text-amber-800 border-amber-300"
+                    : "bg-red-50 text-red-700 border-red-200",
         };
     }
 
@@ -198,6 +198,34 @@ function OrdersContent() {
     const [customerPreviewProof, setCustomerPreviewProof] = useState("");
     const [repeatLoadingId, setRepeatLoadingId] = useState(null);
     const [repeatOrderModal, setRepeatOrderModal] = useState(null);
+    const [dismissedExpiredIds, setDismissedExpiredIds] = useState([]);
+
+    useEffect(() => {
+        try {
+            const stored = JSON.parse(localStorage.getItem("ava_eats_dismissed_expired") || "[]");
+            setDismissedExpiredIds(Array.isArray(stored) ? stored : []);
+        } catch {
+            setDismissedExpiredIds([]);
+        }
+    }, []);
+
+    const handleDismissExpired = (orderId) => {
+        try {
+            const stored = JSON.parse(localStorage.getItem("ava_eats_dismissed_expired") || "[]");
+            if (!stored.includes(orderId)) {
+                stored.push(orderId);
+                localStorage.setItem("ava_eats_dismissed_expired", JSON.stringify(stored));
+            }
+            setDismissedExpiredIds([...stored]);
+            setNotice("Pengingat pesanan ini telah disembunyikan dari beranda.");
+            setTimeout(() => setNotice(""), 3500);
+            if (typeof window !== "undefined") {
+                window.dispatchEvent(new Event("ava_eats_dismiss_updated"));
+            }
+        } catch (e) {
+            console.warn("Failed to dismiss expired order:", e);
+        }
+    };
 
     function handleCopyResi(resi) {
         if (typeof navigator !== "undefined" && navigator.clipboard) {
@@ -250,17 +278,20 @@ function OrdersContent() {
         const timer = setTimeout(() => {
             loadOrders();
         }, 0);
-        try {
-            localStorage.removeItem("ava_eats_checkout_cart");
-            localStorage.removeItem("ava_eats_checkout_draft");
-            if (typeof window !== "undefined") {
-                window.dispatchEvent(new Event("ava_eats_cart_updated"));
+        // Bersihkan keranjang HANYA jika dialihkan dari checkout yang sudah berhasil dibayar (?success=1)
+        if (searchParams.get("success") === "1") {
+            try {
+                localStorage.removeItem("ava_eats_checkout_cart");
+                localStorage.removeItem("ava_eats_checkout_draft");
+                if (typeof window !== "undefined") {
+                    window.dispatchEvent(new Event("ava_eats_cart_updated"));
+                }
+            } catch {
+                // ignore
             }
-        } catch {
-            // ignore
         }
         return () => clearTimeout(timer);
-    }, [loadOrders]);
+    }, [loadOrders, searchParams]);
 
     // Derived success notice from URL param if no explicit notice set
     const displayNotice =
@@ -410,7 +441,28 @@ function OrdersContent() {
                 method: "POST",
             });
 
-            setNotice(`Pesanan ${order.order_code} berhasil dibatalkan.`);
+            // Pulihkan item pesanan yang dibatalkan ke keranjang belanja jika keranjang saat ini kosong
+            // agar customer tidak perlu repot memilih ulang hidangan dari awal
+            try {
+                const currentCart = localStorage.getItem("ava_eats_checkout_cart");
+                const parsed = currentCart ? JSON.parse(currentCart) : [];
+                if (!Array.isArray(parsed) || parsed.length === 0) {
+                    if (order.items && order.items.length > 0) {
+                        const restored = order.items.map((it) => ({
+                            product_id: it.product_id,
+                            quantity: it.quantity,
+                        }));
+                        localStorage.setItem("ava_eats_checkout_cart", JSON.stringify(restored));
+                        if (typeof window !== "undefined") {
+                            window.dispatchEvent(new Event("ava_eats_cart_updated"));
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn("Failed to keep cart on cancel:", e);
+            }
+
+            setNotice(`Pesanan ${order.order_code} berhasil dibatalkan. Menu pilihanmu tetap tersimpan di keranjang jika ingin checkout kembali.`);
             await loadOrders();
         } catch (err) {
             setError(err.message || "Gagal membatalkan pesanan.");
@@ -597,7 +649,7 @@ function OrdersContent() {
                     <div className="rounded-2xl bg-white p-6 text-center">
                         <p className="font-semibold">Belum ada pesanan</p>
                         <p className="mt-2 text-sm text-[#78686A]">
-                            Pesanan yang kamu buat akan muncul di halaman ini.
+                            Pesanan yang Moms buat akan muncul di halaman ini.
                         </p>
                         <Link
                             href="/"
@@ -647,18 +699,17 @@ function OrdersContent() {
                                             </p>
                                         </div>
 
-                                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                                            order.status === "cancelled" && order.refund_status === "refund_pending"
+                                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${order.status === "cancelled" && order.refund_status === "refund_pending"
                                                 ? "bg-amber-100 text-amber-800 border border-amber-300"
                                                 : order.status === "cancelled" && order.refund_status === "refunded"
-                                                ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
-                                                : "bg-[#F5E8E8] text-[#7A3545]"
-                                        }`}>
+                                                    ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                                    : "bg-[#F5E8E8] text-[#7A3545]"
+                                            }`}>
                                             {order.status === "cancelled" && order.refund_status === "refund_pending"
                                                 ? "Batal (Refund Diproses)"
                                                 : order.status === "cancelled" && order.refund_status === "refunded"
-                                                ? "Batal (Refund Selesai)"
-                                                : (ORDER_STATUS_LABELS[orderStatus] || order.status)}
+                                                    ? "Batal (Refund Selesai)"
+                                                    : (ORDER_STATUS_LABELS[orderStatus] || order.status)}
                                         </span>
                                     </div>
 
@@ -680,24 +731,22 @@ function OrdersContent() {
                                                             return (
                                                                 <div key={i} className="flex flex-col items-center">
                                                                     <div
-                                                                        className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold transition-all ${
-                                                                            isDone
+                                                                        className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold transition-all ${isDone
                                                                                 ? "bg-[#6E8F63] text-white"
                                                                                 : isCurrent
-                                                                                ? "bg-[#7A2E3A] text-white ring-4 ring-[#7A2E3A]/20 animate-pulse"
-                                                                                : "bg-[#E8DDD7] text-[#8A7778]"
-                                                                        }`}
+                                                                                    ? "bg-[#7A2E3A] text-white ring-4 ring-[#7A2E3A]/20 animate-pulse"
+                                                                                    : "bg-[#E8DDD7] text-[#8A7778]"
+                                                                            }`}
                                                                     >
                                                                         {isDone ? "✓" : st.icon}
                                                                     </div>
                                                                     <span
-                                                                        className={`mt-1.5 text-[9px] font-semibold text-center whitespace-nowrap ${
-                                                                            isCurrent
+                                                                        className={`mt-1.5 text-[9px] font-semibold text-center whitespace-nowrap ${isCurrent
                                                                                 ? "text-[#7A2E3A] font-bold"
                                                                                 : isDone
-                                                                                ? "text-[#456044]"
-                                                                                : "text-[#A89F97]"
-                                                                        }`}
+                                                                                    ? "text-[#456044]"
+                                                                                    : "text-[#A89F97]"
+                                                                            }`}
                                                                     >
                                                                         {st.label}
                                                                     </span>
@@ -1070,6 +1119,17 @@ function OrdersContent() {
                                             ? "Memeriksa ketersediaan menu..."
                                             : "Pesan Lagi (Repeat Order)"}
                                     </button>
+
+                                    {/* Opsi Abaikan Pengingat jika pesanan dibatalkan/expired agar tidak muncul lagi di beranda */}
+                                    {(lifecycle.isCancelled || orderStatus === "cancelled" || paymentStatus === "expired") && !dismissedExpiredIds.includes(order.id) && (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDismissExpired(order.id)}
+                                            className="mt-2 w-full text-center text-[11px] font-medium text-[#8A7778] hover:text-[#7A3545] hover:underline transition py-0.5"
+                                        >
+                                            ✕ Abaikan / Sembunyikan Pengingat
+                                        </button>
+                                    )}
                                 </article>
                             );
                         })}
@@ -1101,11 +1161,10 @@ function OrdersContent() {
                                         key={pageNumber}
                                         type="button"
                                         onClick={() => handlePageChange(pageNumber)}
-                                        className={`h-8 w-8 rounded-xl text-xs font-bold transition ${
-                                            validCurrentPage === pageNumber
+                                        className={`h-8 w-8 rounded-xl text-xs font-bold transition ${validCurrentPage === pageNumber
                                                 ? "bg-[#7A3545] text-white shadow-sm"
                                                 : "border border-[#EEE5DF] bg-white text-[#503E40] hover:bg-[#FAF7F2]"
-                                        }`}
+                                            }`}
                                     >
                                         {pageNumber}
                                     </button>
@@ -1202,13 +1261,12 @@ function OrdersContent() {
                             {repeatOrderModal.itemsReport.map((it, idx) => (
                                 <div
                                     key={idx}
-                                    className={`flex items-start justify-between rounded-xl p-2.5 text-xs ${
-                                        it.status === "out_of_stock"
+                                    className={`flex items-start justify-between rounded-xl p-2.5 text-xs ${it.status === "out_of_stock"
                                             ? "border border-red-200 bg-red-50/80 text-red-900"
                                             : it.status === "partial"
-                                            ? "border border-amber-200 bg-amber-50/80 text-amber-900"
-                                            : "border border-emerald-100 bg-emerald-50/50 text-emerald-900"
-                                    }`}
+                                                ? "border border-amber-200 bg-amber-50/80 text-amber-900"
+                                                : "border border-emerald-100 bg-emerald-50/50 text-emerald-900"
+                                        }`}
                                 >
                                     <div className="min-w-0 pr-2">
                                         <p className="font-bold truncate">{it.name}</p>
@@ -1226,13 +1284,12 @@ function OrdersContent() {
                                             )}
                                         </p>
                                     </div>
-                                    <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-extrabold uppercase ${
-                                        it.status === "out_of_stock"
+                                    <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-extrabold uppercase ${it.status === "out_of_stock"
                                             ? "bg-red-200 text-red-800"
                                             : it.status === "partial"
-                                            ? "bg-amber-200 text-amber-900"
-                                            : "bg-emerald-200 text-emerald-800"
-                                    }`}>
+                                                ? "bg-amber-200 text-amber-900"
+                                                : "bg-emerald-200 text-emerald-800"
+                                        }`}>
                                         {it.status === "out_of_stock" ? "Habis" : `${it.availableQty}x`}
                                     </span>
                                 </div>

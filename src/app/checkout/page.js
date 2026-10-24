@@ -390,7 +390,7 @@ export default function CheckoutPage() {
 
             setActiveOrderId(order.id);
 
-            // Bersihkan keranjang belanja seketika agar tidak terjadi double order
+            // Customer sudah klik tombol bayar & pesanan terbuat di sistem -> bersihkan keranjang belanja
             clearCheckoutCart();
 
             // ── Step 2: Create Midtrans gateway transaction ───────────────
