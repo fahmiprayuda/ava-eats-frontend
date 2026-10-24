@@ -201,12 +201,15 @@ function OrdersContent() {
     const [dismissedExpiredIds, setDismissedExpiredIds] = useState([]);
 
     useEffect(() => {
-        try {
-            const stored = JSON.parse(localStorage.getItem("ava_eats_dismissed_expired") || "[]");
-            setDismissedExpiredIds(Array.isArray(stored) ? stored : []);
-        } catch {
-            setDismissedExpiredIds([]);
-        }
+        const timer = setTimeout(() => {
+            try {
+                const stored = JSON.parse(localStorage.getItem("ava_eats_dismissed_expired") || "[]");
+                setDismissedExpiredIds(Array.isArray(stored) ? stored : []);
+            } catch {
+                setDismissedExpiredIds([]);
+            }
+        }, 0);
+        return () => clearTimeout(timer);
     }, []);
 
     const handleDismissExpired = (orderId) => {
@@ -359,9 +362,10 @@ function OrdersContent() {
     }, [orders]);
 
     // ── Open Midtrans Snap popup ──────────────────────────────────────────
-    function openSnapPopup(token, fallbackUrl) {
+    function openSnapPopup(token, fallbackUrl, isQris = true) {
         if (typeof window !== "undefined" && window.snap) {
             window.snap.pay(token, {
+                uiMode: isQris ? "qr" : "auto",
                 onSuccess: async () => {
                     setNotice("🎉 Pembayaran berhasil!");
                     await loadOrders();

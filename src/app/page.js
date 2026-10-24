@@ -22,6 +22,9 @@ const formatRupiah = (amount) =>
     maximumFractionDigits: 0,
   }).format(amount);
 
+// Feature flag: set ke true jika sewaktu-waktu ingin memunculkan kembali info stok di kartu menu
+const SHOW_PRODUCT_STOCK = false;
+
 export default function Home() {
   const router = useRouter();
   const pathname = usePathname();
@@ -30,7 +33,8 @@ export default function Home() {
   const [productsLoading, setProductsLoading] = useState(true);
   const [productsError, setProductsError] = useState("");
 
-  const [activeTab, setActiveTab] = useState("available");
+  const [activeTab, setActiveTab] = useState("available"); // 'available' (Siap Dipesan) | 'catalog' (Katalog Menu)
+  const [catalogStatusFilter, setCatalogStatusFilter] = useState("Semua"); // "Semua" | "Tersedia" | "Tidak Tersedia"
   const [activeCategory, setActiveCategory] = useState("Semua");
   const [quantities, setQuantities] = useState({});
   const [cartOpen, setCartOpen] = useState(false);
@@ -112,12 +116,14 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (customer) {
-      loadPendingOrders();
-    } else {
-      setPendingOrders([]);
-      setExpiredOrders([]);
-    }
+    const timer = setTimeout(() => {
+      if (customer) {
+        loadPendingOrders();
+      } else {
+        setPendingOrders([]);
+        setExpiredOrders([]);
+      }
+    }, 0);
 
     window.addEventListener("focus", loadPendingOrders);
     window.addEventListener("pageshow", loadPendingOrders);
@@ -125,6 +131,7 @@ export default function Home() {
     window.addEventListener("ava_eats_dismiss_updated", loadPendingOrders);
 
     return () => {
+      clearTimeout(timer);
       window.removeEventListener("focus", loadPendingOrders);
       window.removeEventListener("pageshow", loadPendingOrders);
       window.removeEventListener("ava_eats_cart_updated", loadPendingOrders);
@@ -316,18 +323,52 @@ export default function Home() {
   }, [dbCategories, products]);
 
   const visibleProducts = useMemo(() => {
-    return products.filter((product) => {
-      const matchesCategory =
-        activeCategory === "Semua" ||
-        product.category === activeCategory;
+    let result = products.filter((product) => {
+      // 1. Pada tab "available" (Siap Dipesan): hanya tampilkan menu yang stoknya tersedia
+      if (activeTab === "available") {
+        if (!product.available) {
+          return false;
+        }
+
+        const matchesCategory =
+          activeCategory === "Semua" ||
+          product.category === activeCategory;
+
+        const matchesSearch =
+          product.name.toLowerCase().includes(search.toLowerCase()) ||
+          (product.description &&
+            product.description.toLowerCase().includes(search.toLowerCase()));
+
+        return matchesCategory && matchesSearch;
+      }
+
+      // 2. Pada tab "catalog" (Katalog Menu):
+      // Filter status: "Semua" | "Tersedia" | "Tidak Tersedia"
+      if (catalogStatusFilter === "Tersedia" && !product.available) {
+        return false;
+      }
+      if (catalogStatusFilter === "Tidak Tersedia" && product.available) {
+        return false;
+      }
 
       const matchesSearch =
         product.name.toLowerCase().includes(search.toLowerCase()) ||
-        (product.description && product.description.toLowerCase().includes(search.toLowerCase()));
+        (product.description &&
+          product.description.toLowerCase().includes(search.toLowerCase()));
 
-      return matchesCategory && matchesSearch;
+      return matchesSearch;
     });
-  }, [products, activeCategory, search]);
+
+    // Pada Katalog Menu filter "Semua": urutkan yang Tersedia di atas, Tidak Tersedia di urutan bawah
+    if (activeTab === "catalog" && catalogStatusFilter === "Semua") {
+      result = [...result].sort((a, b) => {
+        if (a.available === b.available) return 0;
+        return a.available ? -1 : 1;
+      });
+    }
+
+    return result;
+  }, [products, activeTab, activeCategory, catalogStatusFilter, search]);
 
   const cartItems = products.filter(
     (product) => (quantities[product.id] || 0) > 0
@@ -610,19 +651,47 @@ export default function Home() {
             <p className="eyebrow">OUR KITCHEN</p>
             <h2>Mau makan apa?</h2>
             <p className="section-subtitle">
-              Pilih menu favoritmu hari ini.
+              {activeTab === "available"
+                ? "Pilih hidangan lezat yang siap dipesan hari ini."
+                : "Katalog seluruh hidangan Ava Eats (Info ketersediaan & detail resep)."}
             </p>
           </div>
           <span className="menu-count">
-            {visibleProducts.length} menu
+            {visibleProducts.length} menu {activeTab === "available" ? "tersedia" : "katalog"}
           </span>
+        </div>
+
+        {/* ── Mode Tab Menu: AVAILABLE (Siap Dipesan) vs KATALOG MENU (Semua) ── */}
+        <div className="menu-tabs mb-3" role="tablist" aria-label="Mode Menu">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "available"}
+            className={activeTab === "available" ? "active font-bold" : ""}
+            onClick={() => setActiveTab("available")}
+          >
+            🛍️ Siap Dipesan
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "catalog"}
+            className={activeTab === "catalog" ? "active font-bold" : ""}
+            onClick={() => setActiveTab("catalog")}
+          >
+            📖 Katalog Menu
+          </button>
         </div>
 
         <div className="search-box">
           <span aria-hidden="true">⌕</span>
           <input
             type="search"
-            placeholder="Cari menu favorit..."
+            placeholder={
+              activeTab === "available"
+                ? "Cari menu yang siap dipesan..."
+                : "Cari di katalog hidangan..."
+            }
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             aria-label="Cari menu"
@@ -637,26 +706,52 @@ export default function Home() {
           )}
         </div>
 
-        {/* Kategori Menu Pilihan */}
-        <div className="category-list" role="tablist">
-          {categories.map((cat) => {
-            const catName = typeof cat === "string" ? cat : cat.name;
-            const catIcon = typeof cat === "object" ? cat.icon : null;
-            const isActive = activeCategory === catName;
-            return (
-              <button
-                key={catName}
-                className={isActive ? "category-chip active" : "category-chip"}
-                onClick={() => setActiveCategory(catName)}
-                role="tab"
-                aria-selected={isActive}
-              >
-                {catIcon && <span className="mr-1">{catIcon}</span>}
-                {catName}
-              </button>
-            );
-          })}
-        </div>
+        {/* Filter Bar */}
+        {activeTab === "available" ? (
+          /* Kategori Menu untuk Siap Dipesan */
+          <div className="category-list" role="tablist">
+            {categories.map((cat) => {
+              const catName = typeof cat === "string" ? cat : cat.name;
+              const catIcon = typeof cat === "object" ? cat.icon : null;
+              const isActive = activeCategory === catName;
+              return (
+                <button
+                  key={catName}
+                  className={isActive ? "category-chip active" : "category-chip"}
+                  onClick={() => setActiveCategory(catName)}
+                  role="tab"
+                  aria-selected={isActive}
+                >
+                  {catIcon && <span className="mr-1">{catIcon}</span>}
+                  {catName}
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          /* Filter Status untuk Katalog Menu: Semua, Tersedia, Tidak Tersedia */
+          <div className="category-list" role="tablist">
+            {[
+              { id: "Semua", label: "Semua", icon: "✨" },
+              { id: "Tersedia", label: "Tersedia", icon: "🟢" },
+              { id: "Tidak Tersedia", label: "Tidak Tersedia", icon: "⚪" },
+            ].map((f) => {
+              const isActive = catalogStatusFilter === f.id;
+              return (
+                <button
+                  key={f.id}
+                  className={isActive ? "category-chip active" : "category-chip"}
+                  onClick={() => setCatalogStatusFilter(f.id)}
+                  role="tab"
+                  aria-selected={isActive}
+                >
+                  <span className="mr-1">{f.icon}</span>
+                  {f.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
 
         {productsLoading && (
@@ -680,13 +775,15 @@ export default function Home() {
 
 
         {!productsLoading && !productsError && (
-          <div className="product-grid">
-            {visibleProducts.map((product) => {
-              const quantity = quantities[product.id] || 0;
-
-              return (
-                <article className="product-card" key={product.id}>
-                  <div className="product-image">
+          activeTab === "catalog" ? (
+            /* ── Tampilan 3 Kolom Jejer untuk Katalog Menu ── */
+            <div className="grid grid-cols-3 gap-2 sm:gap-2.5 w-full">
+              {visibleProducts.map((product) => (
+                <article
+                  className="flex flex-col overflow-hidden rounded-xl border border-[#EDDFD4] bg-[#FAF5EE] shadow-xs transition-all hover:shadow-sm"
+                  key={product.id}
+                >
+                  <div className="relative aspect-square w-full overflow-hidden bg-[#F3EBE1] flex items-center justify-center">
                     {product.image ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
@@ -695,85 +792,169 @@ export default function Home() {
                         className="h-full w-full object-cover transition-transform duration-300 hover:scale-105"
                       />
                     ) : (
-                      <span className="food-emoji">{product.emoji}</span>
+                      <span className="food-emoji text-3xl">{product.emoji || "🍽️"}</span>
                     )}
 
                     {product.popular && (
-                      <span className="popular-badge">★ Favorit</span>
+                      <span className="popular-badge text-[7px] px-1 py-0.5">★ Favorit</span>
                     )}
 
-                    {!product.available && (
-                      <span className="unavailable-badge">Tidak Tersedia</span>
+                    {/* Status Badge */}
+                    {product.available ? (
+                      <span className="absolute top-1 left-1 z-10 rounded-md bg-[#2D7A4D]/95 text-white px-1.5 py-0.5 text-[8px] font-bold shadow-xs">
+                        ✓ Tersedia
+                      </span>
+                    ) : (
+                      <span className="absolute top-1 left-1 z-10 rounded-md bg-[#766E67]/95 text-white px-1.5 py-0.5 text-[8px] font-bold shadow-xs">
+                        Tidak Tersedia
+                      </span>
                     )}
                   </div>
 
-                  <div className="product-content">
-                    <p className="product-category">{product.category}</p>
+                  <div className="flex flex-1 flex-col p-2">
+                    <p className="text-[8px] font-extrabold uppercase tracking-wide text-[#6E8F63] truncate">
+                      {product.category}
+                    </p>
 
-                    <div className="flex items-center justify-between gap-2">
-                      <h3>{product.name}</h3>
+                    <h3 className="text-[11px] font-bold leading-tight text-[#2A2620] line-clamp-2 mt-0.5 min-h-[26px]">
+                      {product.name}
+                    </h3>
 
+                    {SHOW_PRODUCT_STOCK && (
                       <span
-                        className={`shrink-0 text-xs ${product.available ? "text-[#6B6459]" : "text-red-600"
-                          }`}
+                        className={`shrink-0 text-[8px] mt-0.5 ${
+                          product.available ? "text-[#6B6459]" : "text-red-600"
+                        }`}
                       >
                         {product.stock > 0 ? `Stok: ${product.stock}` : "Habis"}
                       </span>
+                    )}
+
+                    {product.description && (
+                      <p className="text-[8.5px] leading-tight text-[#83776D] line-clamp-2 mt-1 mb-1.5">
+                        {product.description}
+                      </p>
+                    )}
+
+                    <div className="mt-auto pt-1">
+                      <span className="block text-[7.5px] text-[#9C9185]">Mulai dari</span>
+                      <span className="block text-[11px] font-extrabold text-[#7A2E3A] leading-tight">
+                        {formatRupiah(product.price)}
+                      </span>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            /* ── Tampilan 3 Kolom Jejer untuk Menu Siap Dipesan (Dengan Tombol Pesan / Kuantitas) ── */
+            <div className="grid grid-cols-3 gap-2 sm:gap-2.5 w-full">
+              {visibleProducts.map((product) => {
+                const quantity = quantities[product.id] || 0;
+
+                return (
+                  <article
+                    className="flex flex-col overflow-hidden rounded-xl border border-[#EDDFD4] bg-[#FAF5EE] shadow-xs transition-all hover:shadow-sm"
+                    key={product.id}
+                  >
+                    <div className="relative aspect-square w-full overflow-hidden bg-[#F3EBE1] flex items-center justify-center">
+                      {product.image ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={getImageUrl(product.image)}
+                          alt={product.name}
+                          className="h-full w-full object-cover transition-transform duration-300 hover:scale-105"
+                        />
+                      ) : (
+                        <span className="food-emoji text-3xl">{product.emoji || "🍽️"}</span>
+                      )}
+
+                      {product.popular && (
+                        <span className="popular-badge text-[7px] px-1 py-0.5">★ Favorit</span>
+                      )}
+
+                      {!product.available && (
+                        <span className="absolute top-1 left-1 z-10 rounded-md bg-[#766E67]/95 text-white px-1.5 py-0.5 text-[8px] font-bold shadow-xs">
+                          Habis
+                        </span>
+                      )}
                     </div>
 
-                    <p className="product-description">
-                      {product.description}
-                    </p>
+                    <div className="flex flex-1 flex-col p-2">
+                      <p className="text-[8px] font-extrabold uppercase tracking-wide text-[#6E8F63] truncate">
+                        {product.category}
+                      </p>
 
-                    <div className="product-bottom">
-                      <div>
-                        <p className="price-label">Mulai dari</p>
-                        <p className="product-price">
-                          {formatRupiah(product.price)}
+                      <h3 className="text-[11px] font-bold leading-tight text-[#2A2620] line-clamp-2 mt-0.5 min-h-[26px]">
+                        {product.name}
+                      </h3>
+
+                      {SHOW_PRODUCT_STOCK && (
+                        <span
+                          className={`shrink-0 text-[8px] mt-0.5 ${
+                            product.available ? "text-[#6B6459]" : "text-red-600"
+                          }`}
+                        >
+                          {product.stock > 0 ? `Stok: ${product.stock}` : "Habis"}
+                        </span>
+                      )}
+
+                      {product.description && (
+                        <p className="text-[8.5px] leading-tight text-[#83776D] line-clamp-2 mt-1 mb-1.5">
+                          {product.description}
                         </p>
-                      </div>
+                      )}
 
-                      {product.available ? (
-                        quantity === 0 ? (
-                          <button
-                            type="button"
-                            disabled={quantity >= product.stock}
-                            onClick={() => changeQuantity(product.id, 1)}
-                            aria-label={`Tambah ${product.name}`}
-                            className="disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            +
-                          </button>
-                        ) : (
-                          <div className="quantity-control">
-                            <button
-                              type="button"
-                              onClick={() => changeQuantity(product.id, -1)}
-                              aria-label={`Kurangi ${product.name}`}
-                            >
-                              −
-                            </button>
-                            <span>{quantity}</span>
+                      <div className="product-bottom mt-auto pt-1 flex items-end justify-between gap-1">
+                        <div>
+                          <span className="block text-[7.5px] text-[#9C9185]">Mulai dari</span>
+                          <span className="block text-[11px] font-extrabold text-[#7A2E3A] leading-tight">
+                            {formatRupiah(product.price)}
+                          </span>
+                        </div>
+
+                        {product.available ? (
+                          quantity === 0 ? (
                             <button
                               type="button"
                               disabled={quantity >= product.stock}
                               onClick={() => changeQuantity(product.id, 1)}
                               aria-label={`Tambah ${product.name}`}
-                              className="disabled:cursor-not-allowed disabled:opacity-40"
+                              className="add-button disabled:cursor-not-allowed disabled:opacity-40"
                             >
                               +
                             </button>
-                          </div>
-                        )
-                      ) : (
-                        <span className="sold-out">Tidak Tersedia</span>
-                      )}
+                          ) : (
+                            <div className="quantity-control">
+                              <button
+                                type="button"
+                                onClick={() => changeQuantity(product.id, -1)}
+                                aria-label={`Kurangi ${product.name}`}
+                              >
+                                −
+                              </button>
+                              <span>{quantity}</span>
+                              <button
+                                type="button"
+                                disabled={quantity >= product.stock}
+                                onClick={() => changeQuantity(product.id, 1)}
+                                aria-label={`Tambah ${product.name}`}
+                                className="disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                +
+                              </button>
+                            </div>
+                          )
+                        ) : (
+                          <span className="sold-out">Tidak Tersedia</span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
+                  </article>
+                );
+              })}
+            </div>
+          )
         )}
 
 
@@ -783,12 +964,24 @@ export default function Home() {
             <div className="empty-state">
               <span>🍽️</span>
               <h3>Menu belum ditemukan</h3>
-              <p>Coba kata kunci atau kategori lainnya, ya.</p>
+              <p>
+                {activeTab === "catalog"
+                  ? catalogStatusFilter === "Tersedia"
+                    ? "Belum ada hidangan dengan status tersedia saat ini."
+                    : catalogStatusFilter === "Tidak Tersedia"
+                    ? "Tidak ada hidangan yang berstatus tidak tersedia."
+                    : "Coba kata kunci pencarian lainnya, ya Moms."
+                  : "Coba kata kunci atau kategori lainnya, ya Moms."}
+              </p>
               <button
                 className="text-button"
                 onClick={() => {
                   setSearch("");
-                  setActiveCategory("Semua");
+                  if (activeTab === "available") {
+                    setActiveCategory("Semua");
+                  } else {
+                    setCatalogStatusFilter("Semua");
+                  }
                 }}
               >
                 Reset pencarian

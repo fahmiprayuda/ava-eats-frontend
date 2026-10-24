@@ -291,6 +291,7 @@ export default function CheckoutPage() {
         }
 
         window.snap.pay(token, {
+            uiMode: paymentMethod === "qris" ? "qr" : "auto",
             onSuccess: () => {
                 setPaymentStatus("approved");
                 clearCheckoutCart();
@@ -941,6 +942,7 @@ export default function CheckoutPage() {
                             </div>
                         </div>
 
+                        {/* Opsi 1: QRIS Langsung Scan */}
                         <label
                             className={`payment-option ${paymentMethod === "qris" ? "selected" : ""}`}
                         >
@@ -951,16 +953,22 @@ export default function CheckoutPage() {
                                 checked={paymentMethod === "qris"}
                                 onChange={(e) => setPaymentMethod(e.target.value)}
                             />
-                            <span className="payment-icon">📱</span>
+                            <span className="payment-icon text-2xl">📱</span>
                             <span className="payment-copy">
-                                <strong>QRIS & E-Wallet</strong>
-                                <small>Scan QR via BCA, Livin, GoPay, ShopeePay, OVO dll</small>
+                                <strong className="flex items-center gap-2">
+                                    QRIS (Langsung Scan Barcode)
+                                    <span className="rounded-full bg-[#7A2E3A]/10 text-[#7A2E3A] px-2 py-0.5 text-[10px] font-bold">
+                                        Instan & Otomatis
+                                    </span>
+                                </strong>
+                                <small>Scan QR via GoPay, OVO, DANA, BCA, Livin Mandiri, BRImo, ShopeePay & Semua Bank</small>
                             </span>
                             <span className="payment-check">
                                 {paymentMethod === "qris" ? "✓" : ""}
                             </span>
                         </label>
 
+                        {/* Opsi 2: BCA Virtual Account */}
                         <label
                             className={`payment-option ${paymentMethod === "bank_transfer" ? "selected" : ""}`}
                         >
@@ -971,10 +979,15 @@ export default function CheckoutPage() {
                                 checked={paymentMethod === "bank_transfer"}
                                 onChange={(e) => setPaymentMethod(e.target.value)}
                             />
-                            <span className="payment-icon">🏦</span>
+                            <span className="payment-icon text-2xl">🏦</span>
                             <span className="payment-copy">
-                                <strong>Transfer Bank (Virtual Account)</strong>
-                                <small>BCA, Mandiri Bill, BNI, BRI, Permata (Otomatis & Real-time via m-Banking)</small>
+                                <strong className="flex items-center gap-2">
+                                    BCA Virtual Account
+                                    <span className="rounded-full bg-blue-100 text-blue-800 px-2 py-0.5 text-[10px] font-bold">
+                                        BCA
+                                    </span>
+                                </strong>
+                                <small>Bayar instan & otomatis via BCA mobile, myBCA, KlikBCA, atau ATM BCA</small>
                             </span>
                             <span className="payment-check">
                                 {paymentMethod === "bank_transfer" ? "✓" : ""}
