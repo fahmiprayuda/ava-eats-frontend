@@ -6,6 +6,14 @@ const API_BASE_URL =
  */
 export function getImageUrl(path) {
     if (!path || typeof path !== "string") return "";
+
+    // Jika gambar tersimpan dengan URL localhost/127.0.0.1, arahkan ke URL live backend
+    if (path.includes("localhost:8000") || path.includes("127.0.0.1:8000")) {
+        const cleanPath = path.replace(/^https?:\/\/[^\/]+/, "");
+        const backendRoot = API_BASE_URL.replace(/\/api\/?$/, "");
+        return `${backendRoot}${cleanPath.startsWith("/") ? "" : "/"}${cleanPath}`;
+    }
+
     if (
         path.startsWith("http://") ||
         path.startsWith("https://") ||
