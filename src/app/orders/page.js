@@ -408,7 +408,7 @@ function OrdersContent() {
                 `/payments/orders/${order.id}/gateway`,
                 {
                     method: "POST",
-                    body: JSON.stringify({ payment_method: "other_qris" }),
+                    body: JSON.stringify({ payment_method: "qris" }),
                 }
             );
 

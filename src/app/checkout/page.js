@@ -14,7 +14,7 @@ const formatRupiah = (amount) =>
 
 // ─── payment method → Midtrans payment_method param ───────────────────────
 const PAYMENT_METHOD_MAP = {
-    qris: "other_qris",
+    qris: "qris",
     bank_transfer: "bank_transfer",
 };
 
@@ -402,7 +402,7 @@ export default function CheckoutPage() {
                 {
                     method: "POST",
                     body: JSON.stringify({
-                        payment_method: PAYMENT_METHOD_MAP[paymentMethod] ?? "other_qris",
+                        payment_method: PAYMENT_METHOD_MAP[paymentMethod] ?? "qris",
                     }),
                 }
             );
