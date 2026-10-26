@@ -303,7 +303,7 @@ export default function Home() {
           setDbCategories(data);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
     return () => {
       isMounted = false;
     };
@@ -733,8 +733,8 @@ export default function Home() {
           <div className="category-list" role="tablist">
             {[
               { id: "Semua", label: "Semua", icon: "✨" },
-              { id: "Tersedia", label: "Tersedia", icon: "🟢" },
-              { id: "Tidak Tersedia", label: "Tidak Tersedia", icon: "⚪" },
+              // { id: "Tersedia", label: "Tersedia", icon: "🟢" },
+              // { id: "Tidak Tersedia", label: "Tidak Tersedia", icon: "⚪" },
             ].map((f) => {
               const isActive = catalogStatusFilter === f.id;
               return (
@@ -822,9 +822,8 @@ export default function Home() {
 
                     {SHOW_PRODUCT_STOCK && (
                       <span
-                        className={`shrink-0 text-[8px] mt-0.5 ${
-                          product.available ? "text-[#6B6459]" : "text-red-600"
-                        }`}
+                        className={`shrink-0 text-[8px] mt-0.5 ${product.available ? "text-[#6B6459]" : "text-red-600"
+                          }`}
                       >
                         {product.stock > 0 ? `Stok: ${product.stock}` : "Habis"}
                       </span>
@@ -891,9 +890,8 @@ export default function Home() {
 
                       {SHOW_PRODUCT_STOCK && (
                         <span
-                          className={`shrink-0 text-[8px] mt-0.5 ${
-                            product.available ? "text-[#6B6459]" : "text-red-600"
-                          }`}
+                          className={`shrink-0 text-[8px] mt-0.5 ${product.available ? "text-[#6B6459]" : "text-red-600"
+                            }`}
                         >
                           {product.stock > 0 ? `Stok: ${product.stock}` : "Habis"}
                         </span>
@@ -969,8 +967,8 @@ export default function Home() {
                   ? catalogStatusFilter === "Tersedia"
                     ? "Belum ada hidangan dengan status tersedia saat ini."
                     : catalogStatusFilter === "Tidak Tersedia"
-                    ? "Tidak ada hidangan yang berstatus tidak tersedia."
-                    : "Coba kata kunci pencarian lainnya, ya Moms."
+                      ? "Tidak ada hidangan yang berstatus tidak tersedia."
+                      : "Coba kata kunci pencarian lainnya, ya Moms."
                   : "Coba kata kunci atau kategori lainnya, ya Moms."}
               </p>
               <button
