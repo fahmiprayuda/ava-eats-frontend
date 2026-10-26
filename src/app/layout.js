@@ -35,7 +35,7 @@ export const viewport = {
 };
 
 const MIDTRANS_SNAP_URL =
-  process.env.NEXT_PUBLIC_MIDTRANS_IS_PRODUCTION === "true"
+  (process.env.NEXT_PUBLIC_MIDTRANS_IS_PRODUCTION ?? "true") === "true"
     ? "https://app.midtrans.com/snap/snap.js"
     : "https://app.sandbox.midtrans.com/snap/snap.js";
 
@@ -53,7 +53,7 @@ export default function RootLayout({ children }) {
           src={MIDTRANS_SNAP_URL}
           data-client-key={
             process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY ||
-            "Mid-client-Bn-6bqG1JD-XzbrL"
+            "Mid-client-csJpSbJb7RQ36tmj"
           }
           strategy="afterInteractive"
         />
