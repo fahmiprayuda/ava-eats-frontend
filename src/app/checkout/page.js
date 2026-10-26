@@ -874,38 +874,55 @@ export default function CheckoutPage() {
                                                     Pilih alamat pengiriman terlebih dahulu untuk melihat opsi kurir.
                                                 </p>
                                             ) : (
-                                                <div className="space-y-2.5">
+                                                <div className="space-y-2.5 max-h-[350px] overflow-y-auto pr-1.5 overscroll-contain">
                                                     {shippingRates.map((rate) => {
                                                         const key = `${rate.courier_code}:${rate.courier_service_code}`;
                                                         const isSelected = selectedCourierKey === key;
+                                                        const isPaxel = rate.courier_code?.toLowerCase() === "paxel";
+                                                        const isInstant = rate.courier_service_code?.toLowerCase().includes("instant");
+
                                                         return (
                                                             <label
                                                                 key={key}
-                                                                className={`flex cursor-pointer items-center justify-between rounded-xl border p-3.5 transition ${isSelected
+                                                                className={`flex cursor-pointer items-start justify-between rounded-xl border p-3.5 transition ${isSelected
                                                                     ? "border-[#7A2E3A] bg-[#F3E1DE]/40 shadow-sm"
+                                                                    : isPaxel
+                                                                    ? "border-[#BAE6FD] bg-[#F0F9FF]/70 hover:bg-[#F0F9FF]"
                                                                     : "border-[#E8D6CE] bg-white hover:bg-[#FAF7F2]"
                                                                     }`}
                                                             >
-                                                                <div className="flex min-w-0 items-center gap-3">
+                                                                <div className="flex min-w-0 items-start gap-3">
                                                                     <input
                                                                         type="radio"
                                                                         name="courier_option"
                                                                         value={key}
                                                                         checked={isSelected}
                                                                         onChange={() => setSelectedCourierKey(key)}
-                                                                        className="h-4 w-4 accent-[#7A2E3A]"
+                                                                        className="mt-1 h-4 w-4 accent-[#7A2E3A]"
                                                                     />
                                                                     <div className="min-w-0">
-                                                                        <div className="flex items-center gap-2">
+                                                                        <div className="flex flex-wrap items-center gap-1.5">
                                                                             <strong className="text-sm font-semibold text-[#2A2620]">
                                                                                 {rate.courier_name}
                                                                             </strong>
                                                                             <span className="rounded bg-[#EAE2DC] px-2 py-0.5 text-xs font-medium text-[#5A4E4D]">
                                                                                 {rate.courier_service_name}
                                                                             </span>
+                                                                            {isPaxel && (
+                                                                                <span className="rounded-full bg-[#E0F2FE] px-2 py-0.5 text-[11px] font-bold text-[#0284C7]">
+                                                                                    ❄️ Fasilitas Pendingin
+                                                                                </span>
+                                                                            )}
+                                                                            {isInstant && !isPaxel && (
+                                                                                <span className="rounded-full bg-[#FEF3C7] px-2 py-0.5 text-[11px] font-semibold text-[#B45309]">
+                                                                                    ⚡ Tiba Cepat
+                                                                                </span>
+                                                                            )}
                                                                         </div>
-                                                                        <p className="mt-0.5 truncate text-xs text-[#78686A]">
-                                                                            {rate.description || `Estimasi tiba: ${rate.duration || "1-2 hari"}`}
+                                                                        <p className="mt-1 text-xs text-[#78686A]">
+                                                                            {isPaxel
+                                                                                ? "Dilengkapi fasilitas chiller/freezer transit aman untuk makanan beku & katering"
+                                                                                : rate.description || `Estimasi tiba: ${rate.duration || "1-2 hari"}`}
                                                                         </p>
                                                                     </div>
                                                                 </div>
