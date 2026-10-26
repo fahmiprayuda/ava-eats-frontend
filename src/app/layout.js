@@ -51,7 +51,10 @@ export default function RootLayout({ children }) {
         {/* Midtrans Snap.js — loaded after page is interactive */}
         <Script
           src={MIDTRANS_SNAP_URL}
-          data-client-key={process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY}
+          data-client-key={
+            process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY ||
+            "Mid-client-Bn-6bqG1JD-XzbrL"
+          }
           strategy="afterInteractive"
         />
       </body>

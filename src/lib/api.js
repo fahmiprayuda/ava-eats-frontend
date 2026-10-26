@@ -1,5 +1,5 @@
 const API_BASE_URL =
-    process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api";
+    process.env.NEXT_PUBLIC_API_URL || "https://ava-eats-api-production.up.railway.app/api";
 
 /**
  * Mengubah path relatif gambar (misal: /uploads/refunds/...) menjadi URL lengkap ke backend.

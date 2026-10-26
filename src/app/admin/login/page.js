@@ -106,7 +106,7 @@ function AdminLoginForm() {
                                 id="admin-username"
                                 type="text"
                                 autoComplete="username"
-                                placeholder="Contoh: admin_fahmi"
+                                placeholder="Masukkan username admin"
                                 value={username}
                                 onChange={(e) => setUsername(e.target.value)}
                                 required
