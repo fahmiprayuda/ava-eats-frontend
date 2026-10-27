@@ -322,6 +322,16 @@ export default function AdminDashboardPage() {
         return () => clearInterval(countdownInterval);
     }, [autoRefresh, fetchOrders, fetchProducts, fetchCategories, fetchPromos, fetchAuditTrails, fetchAdmins, fetchCustomers, adminUser?.role]);
 
+    // Sync dark background color to html/body for seamless mobile Safari rendering
+    useEffect(() => {
+        document.documentElement.style.backgroundColor = "#191415";
+        document.body.style.backgroundColor = "#191415";
+        return () => {
+            document.documentElement.style.backgroundColor = "";
+            document.body.style.backgroundColor = "";
+        };
+    }, []);
+
     function handleLogout() {
         localStorage.removeItem("ava_eats_admin_token");
         localStorage.removeItem("ava_eats_admin_user");
@@ -1126,16 +1136,16 @@ export default function AdminDashboardPage() {
         .reduce((sum, o) => sum + (o.grand_total || o.total_amount || 0), 0);
 
     return (
-        <main className="min-h-screen bg-[#191415] text-[#F5EFEB] pb-24 sm:pb-16">
+        <main className="min-h-screen w-full max-w-full overflow-x-hidden bg-[#191415] text-[#F5EFEB] pb-24 sm:pb-16">
             {/* Topbar - Mobile First Sticky Header */}
-            <header className="sticky top-0 z-40 border-b border-[#2E2527] bg-[#221B1D]/95 backdrop-blur-md px-3.5 py-3">
-                <div className="mx-auto flex max-w-7xl items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-white/20">
+            <header className="sticky top-0 z-40 border-b border-[#2E2527] bg-[#221B1D]/95 backdrop-blur-md px-3 sm:px-4 py-2.5 sm:py-3 w-full">
+                <div className="mx-auto flex max-w-7xl items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+                        <div className="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-white/20">
                             <img src="/logo.png" alt="Ava Eats Admin" className="h-full w-full object-cover" />
                         </div>
                         <div className="min-w-0">
-                            <span className="block text-[9px] sm:text-[10px] font-bold uppercase tracking-widest text-[#E8A598] truncate">
+                            <span className="block text-[8px] sm:text-[10px] font-bold uppercase tracking-widest text-[#E8A598] truncate">
                                 AVA EATS ADMIN
                             </span>
                             <h1 className="text-xs sm:text-sm font-bold text-white leading-tight truncate">
@@ -1144,7 +1154,7 @@ export default function AdminDashboardPage() {
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                         {/* Auto Refresh 10s Indicator & Manual Sync Button */}
                         <button
                             type="button"
@@ -1158,25 +1168,29 @@ export default function AdminDashboardPage() {
                                 showToast("Data dashboard berhasil di-refresh! 🔄");
                             }}
                             title="Auto-refresh setiap 10 detik. Klik untuk sync sekarang."
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-[#3E3234] bg-[#2A2123] px-2.5 py-1.5 text-xs font-semibold text-[#D1C7BD] hover:bg-[#342A2C] hover:text-white transition"
+                            className="inline-flex items-center gap-1 sm:gap-1.5 rounded-xl border border-[#3E3234] bg-[#2A2123] px-2 sm:px-2.5 py-1.5 text-xs font-semibold text-[#D1C7BD] hover:bg-[#342A2C] hover:text-white transition shrink-0"
                         >
                             <span className="relative flex h-2 w-2">
                                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                             </span>
-                            <span className="text-[11px] font-mono font-bold text-emerald-400">Sync: {refreshCounter}s</span>
+                            <span className="text-[10px] sm:text-[11px] font-mono font-bold text-emerald-400">
+                                <span className="hidden sm:inline">Sync: </span>{refreshCounter}s
+                            </span>
                         </button>
 
                         <Link
                             href="/"
                             target="_blank"
-                            className="hidden sm:inline-flex items-center gap-1 rounded-xl border border-[#3E3234] px-3 py-1.5 text-xs font-semibold text-[#D1C7BD] hover:bg-[#2E2527] transition"
+                            className="hidden md:inline-flex items-center gap-1 rounded-xl border border-[#3E3234] px-3 py-1.5 text-xs font-semibold text-[#D1C7BD] hover:bg-[#2E2527] transition"
                         >
                             <span>↗</span> Buka Toko
                         </Link>
-                        <div className="flex items-center gap-1.5 rounded-xl bg-[#2E2527] px-2.5 py-1.5">
-                            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                            <span className="text-xs font-bold text-white max-w-[130px] sm:max-w-none truncate">
+
+                        {/* Admin Name Badge */}
+                        <div className="flex items-center gap-1.5 rounded-xl bg-[#2E2527] px-2 sm:px-2.5 py-1.5 max-w-[110px] sm:max-w-none">
+                            <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400 animate-pulse" />
+                            <span className="text-[11px] sm:text-xs font-bold text-white truncate">
                                 {adminUser?.name || "Admin"}
                             </span>
                             {adminUser?.role && (
@@ -1188,10 +1202,12 @@ export default function AdminDashboardPage() {
                                 </span>
                             )}
                         </div>
+
+                        {/* Logout Button */}
                         <button
                             type="button"
                             onClick={handleLogout}
-                            className="rounded-xl border border-red-500/30 bg-red-950/40 px-2.5 py-1.5 text-xs font-semibold text-red-300 hover:bg-red-900/60 transition"
+                            className="rounded-xl border border-red-500/30 bg-red-950/40 px-2 sm:px-2.5 py-1.5 text-xs font-semibold text-red-300 hover:bg-red-900/60 transition shrink-0"
                         >
                             Keluar
                         </button>
@@ -1199,7 +1215,7 @@ export default function AdminDashboardPage() {
                 </div>
             </header>
 
-            <div className="mx-auto max-w-7xl px-3 sm:px-4 pt-4 sm:pt-6">
+            <div className="mx-auto max-w-7xl px-3 sm:px-4 pt-3 sm:pt-6 w-full min-w-0">
                 {/* Toast & Error Notifications */}
                 {toast && (
                     <div className="mb-4 rounded-xl border border-emerald-500/40 bg-emerald-950/80 p-3 text-xs font-semibold text-emerald-200 shadow-lg">
@@ -1259,7 +1275,7 @@ export default function AdminDashboardPage() {
                         <span className="text-[9px] sm:text-[10px] text-[#A89F97]">Siap Dipesan</span>
                     </div>
 
-                    <div className="rounded-2xl border border-[#342A2C] bg-[#221B1D] p-3.5 sm:p-4">
+                    <div className="col-span-2 lg:col-span-1 rounded-2xl border border-[#342A2C] bg-[#221B1D] p-3.5 sm:p-4">
                         <span className="text-[10px] sm:text-[11px] font-semibold text-[#A89F97] uppercase tracking-wider">
                             Audit Trail
                         </span>
@@ -1271,7 +1287,7 @@ export default function AdminDashboardPage() {
                 </div>
 
                 {/* Mobile Friendly Tabs */}
-                <div className="mb-4 sm:mb-6 overflow-x-auto no-scrollbar border-b border-[#2E2527] pb-2 flex gap-2">
+                <div className="mb-4 sm:mb-6 overflow-x-auto no-scrollbar border-b border-[#2E2527] pb-2 flex gap-2 w-full min-w-0 max-w-full">
                     <button
                         type="button"
                         onClick={() => setActiveTab("orders")}
@@ -1333,8 +1349,8 @@ export default function AdminDashboardPage() {
 
                 {/* ── TAB 1: ORDERS ─────────────────────────────────────────── */}
                 {activeTab === "orders" && (
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+                    <div className="space-y-4 w-full min-w-0">
+                        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 w-full min-w-0 max-w-full">
                             {[
                                 { id: "all", label: "Semua" },
                                 ...(pendingRefundCount > 0
@@ -1381,7 +1397,7 @@ export default function AdminDashboardPage() {
                                         className="rounded-2xl border border-[#342A2C] bg-[#221B1D] p-4 sm:p-5 shadow-sm transition hover:border-[#4E3E41]"
                                     >
                                         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#2E2527] pb-3">
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 min-w-0">
                                                 <span className="font-mono text-sm font-bold text-white">
                                                     #{ord.id}
                                                 </span>
@@ -1409,14 +1425,14 @@ export default function AdminDashboardPage() {
                                                 )}
                                             </div>
 
-                                            <div className="flex items-center gap-2.5">
+                                            <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
                                                 <button
                                                     type="button"
                                                     onClick={() => setPrintOrder(ord)}
-                                                    className="rounded-lg border border-[#3E3234] bg-[#2A2123] px-2.5 py-1 text-xs font-semibold text-[#D1C7BD] hover:bg-[#342A2C] hover:text-white transition inline-flex items-center gap-1 shadow-xs"
+                                                    className="rounded-lg border border-[#3E3234] bg-[#2A2123] px-2 sm:px-2.5 py-1 text-xs font-semibold text-[#D1C7BD] hover:bg-[#342A2C] hover:text-white transition inline-flex items-center gap-1 shadow-xs shrink-0"
                                                     title="Cetak Struk & Label Thermal (58mm / 80mm)"
                                                 >
-                                                    <span>🖨️</span> Cetak Struk
+                                                    <span>🖨️</span> <span className="hidden sm:inline">Cetak</span> Struk
                                                 </button>
                                                 <div className="text-right">
                                                     <span className="text-xs sm:text-sm font-bold text-white">
@@ -1558,7 +1574,7 @@ export default function AdminDashboardPage() {
                                                 {ord.refund_status === "refund_pending" ? (
                                                     <div className="rounded-xl border border-amber-500/40 bg-amber-950/30 p-3 sm:p-3.5 flex flex-wrap items-center justify-between gap-3">
                                                         <div className="min-w-0">
-                                                            <div className="flex items-center gap-2">
+                                                            <div className="flex flex-wrap items-center gap-2">
                                                                 <span className="flex h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
                                                                 <p className="text-xs font-bold text-amber-300">
                                                                     PERLU PENGEMBALIAN DANA (REFUND): Rp {(ord.grand_total || ord.total_amount || 0).toLocaleString("id-ID")}
@@ -1623,7 +1639,7 @@ export default function AdminDashboardPage() {
                                 <h2 className="text-sm font-bold text-white">Daftar Menu & Stok</h2>
                                 <p className="text-[11px] text-[#A89F97]">Atur menu makanan, kategori hidangan, dan stok dapur.</p>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                                 <button
                                     type="button"
                                     onClick={() => setShowCategoryManager(true)}
@@ -1777,7 +1793,7 @@ export default function AdminDashboardPage() {
 
                                             {/* Action buttons */}
                                             <div className="mt-3 pt-3 border-t border-[#2E2527] flex items-center justify-between gap-2">
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex flex-wrap items-center gap-2">
                                                     <button
                                                         type="button"
                                                         onClick={() => openEditProductModal(prod)}
@@ -1828,7 +1844,7 @@ export default function AdminDashboardPage() {
                                 </p>
                             </div>
 
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                                 <input
                                     type="text"
                                     value={promoSearch}
@@ -1883,7 +1899,7 @@ export default function AdminDashboardPage() {
                                             >
                                                 <div>
                                                     <div className="flex items-start justify-between gap-2">
-                                                        <div className="flex items-center gap-2">
+                                                        <div className="flex flex-wrap items-center gap-2">
                                                             <span className="rounded-lg bg-emerald-950/80 border border-emerald-500/40 px-2.5 py-1 text-xs font-black tracking-wider text-emerald-300 uppercase">
                                                                 {promo.code}
                                                             </span>
@@ -2095,7 +2111,7 @@ export default function AdminDashboardPage() {
                     <div className="space-y-4">
                         {/* Sub-tab Switcher: Admins vs Customers */}
                         <div className="flex items-center justify-between flex-wrap gap-3 border-b border-[#2E2527] pb-3">
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                                 <button
                                     type="button"
                                     onClick={() => setUserSubTab("admins")}
@@ -3112,7 +3128,7 @@ export default function AdminDashboardPage() {
                                                 }`}
                                             >
                                                 <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
-                                                    <div className="flex items-center gap-2">
+                                                    <div className="flex flex-wrap items-center gap-2">
                                                         <strong className="font-mono text-xs font-bold text-white">
                                                             #{order.order_code || order.id}
                                                         </strong>
@@ -3566,7 +3582,7 @@ export default function AdminDashboardPage() {
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="flex items-center justify-between border-b border-[#2E2527] pb-3">
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                                 <span className="text-xl">📁</span>
                                 <div>
                                     <h3 className="text-base font-bold text-white">
@@ -3617,7 +3633,7 @@ export default function AdminDashboardPage() {
                                                 {cat.icon || "🍽️"}
                                             </span>
                                             <div className="min-w-0">
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex flex-wrap items-center gap-2">
                                                     <h4 className="text-sm font-bold text-white truncate">
                                                         {cat.name}
                                                     </h4>
