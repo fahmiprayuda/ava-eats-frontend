@@ -108,8 +108,16 @@ export default function AdminDashboardPage() {
     const [savingCustomer, setSavingCustomer] = useState(false);
     const [selectedHistoryCustomer, setSelectedHistoryCustomer] = useState(null);
 
-    // Auto Refresh state (10 detik)
-    const [autoRefresh, setAutoRefresh] = useState(true);
+    // Auto Refresh state (10 detik) - default nonaktif (false)
+    const [autoRefresh, setAutoRefresh] = useState(() => {
+        if (typeof window === "undefined") return false;
+        try {
+            const saved = localStorage.getItem("ava_eats_admin_autorefresh");
+            return saved === "true";
+        } catch {
+            return false;
+        }
+    });
     const [refreshCounter, setRefreshCounter] = useState(10);
 
     // Cancellation & Refund Modal states
@@ -1155,28 +1163,70 @@ export default function AdminDashboardPage() {
                     </div>
 
                     <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                        {/* Auto Refresh 10s Indicator & Manual Sync Button */}
+                        {/* Manual Refresh / Sync Button */}
                         <button
                             type="button"
                             onClick={() => {
                                 fetchOrders();
                                 fetchProducts();
+                                fetchCategories();
+                                fetchPromos();
                                 fetchAuditTrails();
-                                fetchAdmins();
-                                fetchCustomers();
+                                if (adminUser?.role !== "staff") {
+                                    fetchAdmins();
+                                    fetchCustomers();
+                                }
                                 setRefreshCounter(10);
                                 showToast("Data dashboard berhasil di-refresh! 🔄");
                             }}
-                            title="Auto-refresh setiap 10 detik. Klik untuk sync sekarang."
+                            title="Refresh data sekarang secara manual"
                             className="inline-flex items-center gap-1 sm:gap-1.5 rounded-xl border border-[#3E3234] bg-[#2A2123] px-2 sm:px-2.5 py-1.5 text-xs font-semibold text-[#D1C7BD] hover:bg-[#342A2C] hover:text-white transition shrink-0"
                         >
-                            <span className="relative flex h-2 w-2">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                            </span>
-                            <span className="text-[10px] sm:text-[11px] font-mono font-bold text-emerald-400">
-                                <span className="hidden sm:inline">Sync: </span>{refreshCounter}s
-                            </span>
+                            <span>🔄</span>
+                            <span className="hidden sm:inline text-[11px]">Sync</span>
+                        </button>
+
+                        {/* Auto-Refresh 10s Toggle Button */}
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const nextState = !autoRefresh;
+                                setAutoRefresh(nextState);
+                                try {
+                                    localStorage.setItem("ava_eats_admin_autorefresh", String(nextState));
+                                } catch {}
+                                if (nextState) {
+                                    setRefreshCounter(10);
+                                    showToast("Auto-refresh tiap 10 detik diaktifkan! ⏱️");
+                                } else {
+                                    showToast("Auto-refresh dinonaktifkan. ⏸️");
+                                }
+                            }}
+                            title={autoRefresh ? "Auto-refresh aktif setiap 10 detik. Klik untuk mematikan." : "Auto-refresh nonaktif. Klik untuk mengaktifkan."}
+                            className={`inline-flex items-center gap-1 sm:gap-1.5 rounded-xl border px-2 sm:px-2.5 py-1.5 text-xs font-semibold transition shrink-0 ${
+                                autoRefresh
+                                    ? "border-emerald-500/40 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/50"
+                                    : "border-[#3E3234] bg-[#2A2123] text-[#A89F97] hover:bg-[#342A2C] hover:text-white"
+                            }`}
+                        >
+                            {autoRefresh ? (
+                                <>
+                                    <span className="relative flex h-2 w-2">
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                    </span>
+                                    <span className="text-[10px] sm:text-[11px] font-mono font-bold text-emerald-400">
+                                        <span className="hidden sm:inline">Auto: </span>{refreshCounter}s
+                                    </span>
+                                </>
+                            ) : (
+                                <>
+                                    <span className="h-2 w-2 rounded-full bg-[#5E5254]"></span>
+                                    <span className="text-[10px] sm:text-[11px] font-mono font-medium text-[#A89F97]">
+                                        Auto: <span className="font-bold text-[#8C7F82]">Off</span>
+                                    </span>
+                                </>
+                            )}
                         </button>
 
                         <Link
@@ -1188,9 +1238,12 @@ export default function AdminDashboardPage() {
                         </Link>
 
                         {/* Admin Name Badge */}
-                        <div className="flex items-center gap-1.5 rounded-xl bg-[#2E2527] px-2 sm:px-2.5 py-1.5 max-w-[110px] sm:max-w-none">
+                        <div className="flex items-center gap-1.5 rounded-xl bg-[#2E2527] px-2 sm:px-2.5 py-1.5 max-w-[85px] sm:max-w-none">
                             <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400 animate-pulse" />
-                            <span className="text-[11px] sm:text-xs font-bold text-white truncate">
+                            <span className="text-[11px] sm:text-xs font-bold text-white truncate sm:hidden">
+                                {adminUser?.name?.split(" ")[0] || "Admin"}
+                            </span>
+                            <span className="text-xs font-bold text-white truncate hidden sm:inline">
                                 {adminUser?.name || "Admin"}
                             </span>
                             {adminUser?.role && (
