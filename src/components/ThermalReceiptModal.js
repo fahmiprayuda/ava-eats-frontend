@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { parseUtcDate } from "@/lib/api";
 
 export default function ThermalReceiptModal({ order, onClose }) {
     const [paperSize, setPaperSize] = useState("58mm"); // "58mm" | "80mm"
@@ -15,7 +16,7 @@ export default function ThermalReceiptModal({ order, onClose }) {
     const customerName = order.customer_name || order.customer?.name || "Pelanggan";
     const customerPhone = order.phone || order.customer?.phone || "-";
     const orderDate = order.created_at
-        ? new Date(order.created_at).toLocaleString("id-ID", {
+        ? parseUtcDate(order.created_at)?.toLocaleString("id-ID", {
             day: "2-digit",
             month: "2-digit",
             year: "numeric",

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { apiRequest } from "@/lib/api";
+import { apiRequest, parseUtcDate } from "@/lib/api";
 
 const formatRupiah = (amount) =>
     new Intl.NumberFormat("id-ID", {
@@ -13,7 +13,9 @@ const formatRupiah = (amount) =>
 
 function formatDate(dateStr) {
     if (!dateStr) return null;
-    return new Date(dateStr).toLocaleString("id-ID", {
+    const d = parseUtcDate(dateStr);
+    if (!d || isNaN(d.getTime())) return null;
+    return d.toLocaleString("id-ID", {
         day: "numeric",
         month: "short",
         year: "numeric",

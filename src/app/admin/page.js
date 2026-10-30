@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { apiRequest, getImageUrl } from "@/lib/api";
+import { apiRequest, getImageUrl, parseUtcDate, formatDateTime } from "@/lib/api";
 import ThermalReceiptModal from "@/components/ThermalReceiptModal";
 
 const formatRupiah = (amount) =>
@@ -1492,7 +1492,7 @@ export default function AdminDashboardPage() {
                                                         Rp {(ord.grand_total || ord.total_amount || 0).toLocaleString("id-ID")}
                                                     </span>
                                                     <span className="block text-[9px] text-[#A89F97]">
-                                                        {ord.created_at ? new Date(ord.created_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "-"}
+                                                        {ord.created_at ? parseUtcDate(ord.created_at)?.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "-"}
                                                     </span>
                                                 </div>
                                             </div>
@@ -2145,7 +2145,7 @@ export default function AdminDashboardPage() {
                                                     </span>
                                                 </div>
                                                 <span className="text-[9px] sm:text-[10px] text-[#A89F97] font-mono">
-                                                    {trail.created_at ? new Date(trail.created_at).toLocaleString("id-ID") : "-"}
+                                                    {trail.created_at ? formatDateTime(trail.created_at) : "-"}
                                                 </span>
                                             </div>
                                             <p className="mt-1 text-xs text-[#D1C7BD] leading-relaxed">
@@ -3203,12 +3203,13 @@ export default function AdminDashboardPage() {
 
                                                     <span className="text-[10px] text-[#A89F97]">
                                                         {order.created_at
-                                                            ? new Date(order.created_at).toLocaleString("id-ID", {
+                                                            ? formatDateTime(order.created_at, {
                                                                   day: "numeric",
                                                                   month: "short",
                                                                   year: "numeric",
                                                                   hour: "2-digit",
                                                                   minute: "2-digit",
+                                                                  second: undefined,
                                                               })
                                                             : "-"}
                                                     </span>

@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { apiRequest, getImageUrl } from "@/lib/api";
+import { apiRequest, getImageUrl, parseUtcDate } from "@/lib/api";
 
 const formatRupiah = (amount) =>
     new Intl.NumberFormat("id-ID", {
@@ -14,8 +14,10 @@ const formatRupiah = (amount) =>
 
 const formatDate = (value) => {
     if (!value) return "-";
+    const d = parseUtcDate(value);
+    if (!d || isNaN(d.getTime())) return "-";
 
-    return new Date(value).toLocaleString("id-ID", {
+    return d.toLocaleString("id-ID", {
         day: "2-digit",
         month: "short",
         year: "numeric",

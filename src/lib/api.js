@@ -26,6 +26,42 @@ export function getImageUrl(path) {
 }
 
 /**
+ * Mem-parse string tanggal/waktu dari backend UTC menjadi objek Date lokal (WIB / browser).
+ * Menangani kasus di mana backend mengembalikan ISO string tanpa akhiran 'Z' (naive UTC).
+ */
+export function parseUtcDate(val) {
+    if (!val) return null;
+    if (val instanceof Date) return val;
+    if (typeof val === "string") {
+        const trimmed = val.trim();
+        if (!trimmed) return null;
+        // Jika belum ada 'Z' dan belum ada offset (+07:00 / -05:00), tambahkan 'Z' agar dibaca sebagai UTC
+        if (!trimmed.endsWith("Z") && !/[+-]\d{2}(:\d{2})?$/.test(trimmed)) {
+            return new Date(trimmed + "Z");
+        }
+        return new Date(trimmed);
+    }
+    return new Date(val);
+}
+
+/**
+ * Memformat tanggal UTC ke string format lokal Indonesia (WIB).
+ */
+export function formatDateTime(val, options = {}) {
+    const d = parseUtcDate(val);
+    if (!d || isNaN(d.getTime())) return "-";
+    return d.toLocaleString("id-ID", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        ...options,
+    });
+}
+
+/**
  * Cek apakah JWT token sudah kedaluwarsa berdasarkan field 'exp' di payload.
  */
 export function isTokenExpired(token) {
