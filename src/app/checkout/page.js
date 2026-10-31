@@ -63,6 +63,65 @@ export default function CheckoutPage() {
         };
     }, []);
 
+    // ── Auto-apply promo from URL query or localStorage ──────────────────
+    useEffect(() => {
+        let codeFromUrl = "";
+        try {
+            if (typeof window !== "undefined") {
+                const params = new URLSearchParams(window.location.search);
+                codeFromUrl = params.get("promo") || "";
+            }
+        } catch {}
+
+        let storedPromoObj = null;
+        let storedPromoCode = "";
+        try {
+            const raw = localStorage.getItem("ava_eats_selected_promo");
+            if (raw) {
+                if (raw.startsWith("{")) {
+                    storedPromoObj = JSON.parse(raw);
+                    storedPromoCode = storedPromoObj?.code || "";
+                } else {
+                    storedPromoCode = raw;
+                }
+            }
+            if (!storedPromoCode) {
+                storedPromoCode = localStorage.getItem("ava_eats_promo_code") || "";
+            }
+        } catch {}
+
+        const targetCode = (codeFromUrl || storedPromoCode || "").trim().toUpperCase();
+        if (!targetCode) return;
+
+        // Jika sudah terpasang promo yang sama, tidak perlu pasang ulang
+        if (appliedPromo?.code?.toUpperCase() === targetCode) return;
+
+        // 1. Coba cari di storedPromoObj atau availablePromos
+        const matchingPromo =
+            (storedPromoObj?.code?.toUpperCase() === targetCode ? storedPromoObj : null) ||
+            availablePromos.find((p) => p.code?.toUpperCase() === targetCode);
+
+        if (matchingPromo) {
+            setAppliedPromo({
+                ...matchingPromo,
+                code: matchingPromo.code,
+                name: matchingPromo.name || matchingPromo.description,
+                discount_type: matchingPromo.discount_type,
+                discount_value: matchingPromo.discount_value,
+                max_discount: matchingPromo.max_discount,
+                min_order_amount: matchingPromo.min_order_amount,
+            });
+            setPromoInput(matchingPromo.code);
+            try {
+                localStorage.setItem("ava_eats_selected_promo", JSON.stringify(matchingPromo));
+                localStorage.setItem("ava_eats_promo_code", matchingPromo.code);
+            } catch {}
+        } else if (targetCode) {
+            setPromoInput(targetCode);
+            handleApplyPromo(targetCode);
+        }
+    }, [availablePromos]);
+
     // ── shipping / courier state ──────────────────────────────────────────
     const [shippingRates, setShippingRates] = useState([]);
     const [shippingLoading, setShippingLoading] = useState(false);
@@ -271,6 +330,8 @@ export default function CheckoutPage() {
         try {
             localStorage.removeItem("ava_eats_checkout_cart");
             localStorage.removeItem("ava_eats_checkout_draft");
+            localStorage.removeItem("ava_eats_selected_promo");
+            localStorage.removeItem("ava_eats_promo_code");
             setItems([]);
             if (typeof window !== "undefined") {
                 window.dispatchEvent(new Event("ava_eats_cart_updated"));
@@ -462,7 +523,7 @@ export default function CheckoutPage() {
 
             if (res.valid) {
                 const promoData = res.promo || res;
-                setAppliedPromo({
+                const validatedPromo = {
                     ...promoData,
                     code: promoData.code || res.promo_code,
                     name: promoData.name || res.name || res.description,
@@ -470,8 +531,13 @@ export default function CheckoutPage() {
                     discount_value: promoData.discount_value || res.discount_value,
                     max_discount: promoData.max_discount || res.max_discount,
                     min_order_amount: promoData.min_order_amount || res.min_order_amount,
-                });
-                setPromoInput(promoData.code || res.promo_code);
+                };
+                setAppliedPromo(validatedPromo);
+                setPromoInput(validatedPromo.code);
+                try {
+                    localStorage.setItem("ava_eats_selected_promo", JSON.stringify(validatedPromo));
+                    localStorage.setItem("ava_eats_promo_code", validatedPromo.code);
+                } catch {}
             } else {
                 setPromoError(res.message || "Kode promo tidak valid.");
             }
@@ -486,6 +552,15 @@ export default function CheckoutPage() {
         setAppliedPromo(null);
         setPromoError("");
         setPromoInput("");
+        try {
+            localStorage.removeItem("ava_eats_selected_promo");
+            localStorage.removeItem("ava_eats_promo_code");
+            if (typeof window !== "undefined" && window.history.replaceState) {
+                const url = new URL(window.location.href);
+                url.searchParams.delete("promo");
+                window.history.replaceState({}, "", url.pathname + url.search);
+            }
+        } catch {}
     }
 
     // ── Derived ───────────────────────────────────────────────────────────
@@ -595,6 +670,14 @@ export default function CheckoutPage() {
 
             {items.length === 0 ? (
                 <section className="checkout-empty">
+                    {appliedPromo && (
+                        <div className="mb-4 inline-flex items-center gap-2 rounded-2xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-xs font-semibold text-emerald-950 shadow-xs">
+                            <span className="rounded-lg bg-emerald-600 px-2 py-0.5 text-[11px] font-black uppercase text-white tracking-wider">
+                                🎟️ {appliedPromo.code}
+                            </span>
+                            <span>Kupon berhasil terpasang! Yuk pilih menu favorit untuk mulai belanja.</span>
+                        </div>
+                    )}
                     <span>🛒</span>
                     <h2>Keranjangmu masih kosong</h2>
                     <p>Yuk, pilih menu yang Moms suka terlebih dahulu.</p>

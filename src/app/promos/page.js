@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { apiRequest, parseUtcDate } from "@/lib/api";
 
 const formatRupiah = (amount) =>
@@ -25,6 +26,7 @@ function formatDate(dateStr) {
 }
 
 export default function PromosPage() {
+    const router = useRouter();
     const [promos, setPromos] = useState([]);
     const [loading, setLoading] = useState(true);
     const [copiedCode, setCopiedCode] = useState("");
@@ -54,6 +56,15 @@ export default function PromosPage() {
         navigator.clipboard.writeText(code);
         setCopiedCode(code);
         setTimeout(() => setCopiedCode(""), 2500);
+    }
+
+    function handleUsePromo(promo) {
+        if (!promo || !promo.code) return;
+        try {
+            localStorage.setItem("ava_eats_selected_promo", JSON.stringify(promo));
+            localStorage.setItem("ava_eats_promo_code", promo.code);
+        } catch {}
+        router.push(`/checkout?promo=${encodeURIComponent(promo.code)}`);
     }
 
     return (
@@ -221,16 +232,18 @@ export default function PromosPage() {
                                     </div>
 
                                     {/* Action Link to Shopping */}
-                                    <div className="mt-3.5 pt-2.5 border-t border-dashed border-[#F0E4DE] flex items-center justify-between">
+                                    <div className="mt-3.5 pt-2.5 border-t border-dashed border-[#F0E4DE] flex items-center justify-between gap-2">
                                         <span className="text-[10px] text-[#9A8B88]">
-                                            *Otomatis terpotong saat kode dimasukkan di Checkout.
+                                            *Otomatis terpasang langsung di Checkout.
                                         </span>
-                                        <Link
-                                            href="/"
-                                            className="text-xs font-bold text-[#7A2E3A] hover:underline inline-flex items-center gap-1"
+                                        <button
+                                            type="button"
+                                            onClick={() => handleUsePromo(promo)}
+                                            className="rounded-xl bg-[#7A2E3A] px-3.5 py-1.5 text-xs font-bold text-white shadow-xs transition hover:bg-[#60232E] inline-flex items-center gap-1.5 active:scale-95 cursor-pointer shrink-0"
                                         >
-                                            Gunakan Kupon <span>→</span>
-                                        </Link>
+                                            <span>Gunakan Kupon</span>
+                                            <span>→</span>
+                                        </button>
                                     </div>
                                 </div>
                             );
