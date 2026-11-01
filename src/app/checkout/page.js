@@ -93,34 +93,79 @@ export default function CheckoutPage() {
         const targetCode = (codeFromUrl || storedPromoCode || "").trim().toUpperCase();
         if (!targetCode) return;
 
-        // Jika sudah terpasang promo yang sama, tidak perlu pasang ulang
-        if (appliedPromo?.code?.toUpperCase() === targetCode) return;
-
-        // 1. Coba cari di storedPromoObj atau availablePromos
-        const matchingPromo =
-            (storedPromoObj?.code?.toUpperCase() === targetCode ? storedPromoObj : null) ||
-            availablePromos.find((p) => p.code?.toUpperCase() === targetCode);
-
-        if (matchingPromo) {
-            setAppliedPromo({
-                ...matchingPromo,
-                code: matchingPromo.code,
-                name: matchingPromo.name || matchingPromo.description,
-                discount_type: matchingPromo.discount_type,
-                discount_value: matchingPromo.discount_value,
-                max_discount: matchingPromo.max_discount,
-                min_order_amount: matchingPromo.min_order_amount,
-            });
-            setPromoInput(matchingPromo.code);
+        // Cek jika stored promo sudah kedaluwarsa berdasarkan end_date
+        if (storedPromoObj?.end_date && new Date(storedPromoObj.end_date).getTime() <= Date.now()) {
             try {
-                localStorage.setItem("ava_eats_selected_promo", JSON.stringify(matchingPromo));
-                localStorage.setItem("ava_eats_promo_code", matchingPromo.code);
+                localStorage.removeItem("ava_eats_selected_promo");
+                localStorage.removeItem("ava_eats_promo_code");
             } catch {}
-        } else if (targetCode) {
+            setAppliedPromo(null);
+            setPromoError(`Kupon promo "${storedPromoCode}" telah kedaluwarsa dan otomatis dilepas.`);
+            return;
+        }
+
+        // Jika sudah terpasang promo yang sama, tidak perlu pasang ulang
+        if (appliedPromo?.code?.toUpperCase() === targetCode) {
+            if (appliedPromo.end_date && new Date(appliedPromo.end_date).getTime() <= Date.now()) {
+                handleRemovePromo();
+                setPromoError(`Kupon promo "${appliedPromo.code}" telah kedaluwarsa dan otomatis dilepas.`);
+            }
+            return;
+        }
+
+        // Coba cari di availablePromos terlebih dahulu
+        const activePromo = availablePromos.find((p) => p.code?.toUpperCase() === targetCode);
+        if (activePromo) {
+            if (activePromo.end_date && new Date(activePromo.end_date).getTime() <= Date.now()) {
+                handleRemovePromo();
+                setPromoError(`Kupon promo "${activePromo.code}" telah kedaluwarsa.`);
+                return;
+            }
+            setAppliedPromo({
+                ...activePromo,
+                code: activePromo.code,
+                name: activePromo.name || activePromo.description,
+                discount_type: activePromo.discount_type,
+                discount_value: activePromo.discount_value,
+                max_discount: activePromo.max_discount,
+                min_order_amount: activePromo.min_order_amount,
+                end_date: activePromo.end_date,
+                start_date: activePromo.start_date,
+            });
+            setPromoInput(activePromo.code);
+            try {
+                localStorage.setItem("ava_eats_selected_promo", JSON.stringify(activePromo));
+                localStorage.setItem("ava_eats_promo_code", activePromo.code);
+            } catch {}
+        } else if (availablePromos.length > 0 || codeFromUrl) {
             setPromoInput(targetCode);
             handleApplyPromo(targetCode);
         }
     }, [availablePromos]);
+
+    // ── Cek berkala masa berlaku kupon (auto-expire) ────────────────────────
+    useEffect(() => {
+        if (!appliedPromo) return;
+
+        const checkExpiration = () => {
+            if (appliedPromo.end_date && new Date(appliedPromo.end_date).getTime() <= Date.now()) {
+                const expiredCode = appliedPromo.code;
+                handleRemovePromo();
+                setPromoError(`Kupon promo "${expiredCode}" telah kedaluwarsa dan otomatis dilepas.`);
+            }
+        };
+
+        checkExpiration();
+        const interval = setInterval(checkExpiration, 10000);
+        window.addEventListener("focus", checkExpiration);
+        document.addEventListener("visibilitychange", checkExpiration);
+
+        return () => {
+            clearInterval(interval);
+            window.removeEventListener("focus", checkExpiration);
+            document.removeEventListener("visibilitychange", checkExpiration);
+        };
+    }, [appliedPromo]);
 
     // ── shipping / courier state ──────────────────────────────────────────
     const [shippingRates, setShippingRates] = useState([]);
@@ -391,6 +436,13 @@ export default function CheckoutPage() {
             return;
         }
 
+        if (appliedPromo && isPromoExpired) {
+            handleRemovePromo();
+            setMessage("Kupon promo telah kedaluwarsa dan telah dilepas dari pesanan.");
+            setMessageType("error");
+            return;
+        }
+
         if (fulfillmentMethod === "delivery") {
             if (!selectedAddress) {
                 setMessage("Pilih alamat pengiriman terlebih dahulu.");
@@ -437,7 +489,7 @@ export default function CheckoutPage() {
                             : null,
                     shipping_cost: shippingCost,
                     packaging_fee: packagingFee,
-                    promo_code: (appliedPromo && isPromoValidForOrder) ? appliedPromo.code : null,
+                    promo_code: (appliedPromo && isPromoValidForOrder && !isPromoExpired) ? appliedPromo.code : null,
                     notify_whatsapp: notifyWhatsapp,
                 }),
             });
@@ -523,6 +575,13 @@ export default function CheckoutPage() {
 
             if (res.valid) {
                 const promoData = res.promo || res;
+                const endDate = promoData.end_date || res.end_date || null;
+                if (endDate && new Date(endDate).getTime() <= Date.now()) {
+                    handleRemovePromo();
+                    setPromoError(`Kupon promo "${code}" sudah kedaluwarsa.`);
+                    return;
+                }
+
                 const validatedPromo = {
                     ...promoData,
                     code: promoData.code || res.promo_code,
@@ -531,6 +590,8 @@ export default function CheckoutPage() {
                     discount_value: promoData.discount_value || res.discount_value,
                     max_discount: promoData.max_discount || res.max_discount,
                     min_order_amount: promoData.min_order_amount || res.min_order_amount,
+                    end_date: endDate,
+                    start_date: promoData.start_date || res.start_date || null,
                 };
                 setAppliedPromo(validatedPromo);
                 setPromoInput(validatedPromo.code);
@@ -539,10 +600,12 @@ export default function CheckoutPage() {
                     localStorage.setItem("ava_eats_promo_code", validatedPromo.code);
                 } catch {}
             } else {
-                setPromoError(res.message || "Kode promo tidak valid.");
+                handleRemovePromo();
+                setPromoError(res.message || "Kode promo tidak valid atau sudah kedaluwarsa.");
             }
         } catch (err) {
-            setPromoError(err.message || "Gagal menerapkan promo.");
+            handleRemovePromo();
+            setPromoError(err.message || "Gagal menerapkan promo. Kupon mungkin sudah kedaluwarsa.");
         } finally {
             setPromoLoading(false);
         }
@@ -597,8 +660,14 @@ export default function CheckoutPage() {
         [items]
     );
 
+    const isPromoExpired = Boolean(
+        appliedPromo?.end_date && new Date(appliedPromo.end_date).getTime() <= Date.now()
+    );
+
     const isPromoValidForOrder = Boolean(
-        appliedPromo && (!appliedPromo.min_order_amount || totalPrice >= appliedPromo.min_order_amount)
+        appliedPromo &&
+        !isPromoExpired &&
+        (!appliedPromo.min_order_amount || totalPrice >= appliedPromo.min_order_amount)
     );
 
     const isPackagingActive = isPaxel || extraPackaging;
@@ -1220,17 +1289,29 @@ export default function CheckoutPage() {
                             </div>
 
                             {appliedPromo ? (
-                                <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-300 bg-emerald-50/90 p-3">
+                                <div className={`flex items-center justify-between gap-3 rounded-xl border p-3 ${
+                                    isPromoExpired
+                                        ? "border-red-300 bg-red-50/90"
+                                        : "border-emerald-300 bg-emerald-50/90"
+                                }`}>
                                     <div className="min-w-0 flex-1">
                                         <div className="flex items-center gap-2">
-                                            <span className="rounded bg-emerald-600 px-2 py-0.5 text-xs font-black uppercase text-white tracking-wide">
+                                            <span className={`rounded px-2 py-0.5 text-xs font-black uppercase text-white tracking-wide ${
+                                                isPromoExpired ? "bg-red-600" : "bg-emerald-600"
+                                            }`}>
                                                 {appliedPromo.code}
                                             </span>
-                                            <strong className="text-xs text-emerald-950 font-bold truncate">
+                                            <strong className={`text-xs font-bold truncate ${
+                                                isPromoExpired ? "text-red-950" : "text-emerald-950"
+                                            }`}>
                                                 {appliedPromo.name || "Promo Aktif"}
                                             </strong>
                                         </div>
-                                        {isPromoValidForOrder ? (
+                                        {isPromoExpired ? (
+                                            <p className="mt-1 text-[11px] text-red-700 font-semibold">
+                                                ⚠️ Kupon ini telah kedaluwarsa dan tidak dapat digunakan lagi.
+                                            </p>
+                                        ) : isPromoValidForOrder ? (
                                             <p className="mt-1 text-[11px] text-emerald-800">
                                                 Hemat <span className="font-bold">{formatRupiah(discountAmount)}</span> untuk pesanan ini!
                                             </p>
