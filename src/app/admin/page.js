@@ -2500,8 +2500,8 @@ export default function AdminDashboardPage() {
                                     </label>
                                     <input
                                         type="number"
-                                        min={1000}
-                                        step={500}
+                                        min={100}
+                                        step={1}
                                         value={prodPrice}
                                         onChange={(e) => setProdPrice(e.target.value)}
                                         placeholder="35000"
@@ -2515,8 +2515,8 @@ export default function AdminDashboardPage() {
                                     </label>
                                     <input
                                         type="number"
-                                        min={50}
-                                        step={10}
+                                        min={1}
+                                        step={1}
                                         value={prodWeight}
                                         onChange={(e) => setProdWeight(e.target.value)}
                                         placeholder="350"
