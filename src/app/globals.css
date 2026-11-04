@@ -1447,12 +1447,10 @@ input:focus-visible {
     left: 0;
     top: 0;
     margin: 0 !important;
-    padding: 2mm 3mm !important;
     background: #ffffff !important;
     color: #000000 !important;
     box-shadow: none !important;
     border: none !important;
-    font-family: "Courier New", Courier, monospace !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
@@ -1460,11 +1458,13 @@ input:focus-visible {
   #thermal-receipt-printable.paper-58 {
     width: 58mm !important;
     max-width: 58mm !important;
+    padding: 3mm 4mm !important;
   }
 
   #thermal-receipt-printable.paper-80 {
     width: 80mm !important;
     max-width: 80mm !important;
+    padding: 5mm 6mm !important;
   }
 
   @page {

@@ -135,6 +135,13 @@ export default function AdminDashboardPage() {
     const [printOrder, setPrintOrder] = useState(null);
     const refundFileInputRef = useRef(null);
 
+    // Manual Tracking (Resi) Modal State
+    const [manualTrackingModalOrder, setManualTrackingModalOrder] = useState(null);
+    const [manualTrackingResi, setManualTrackingResi] = useState("");
+    const [manualTrackingCourier, setManualTrackingCourier] = useState("manual");
+    const [manualTrackingUpdateStatus, setManualTrackingUpdateStatus] = useState(true);
+    const [manualTrackingSubmitting, setManualTrackingSubmitting] = useState(false);
+
     // Feedback
     const [toast, setToast] = useState("");
     const [errorMsg, setErrorMsg] = useState("");
@@ -386,6 +393,69 @@ export default function AdminDashboardPage() {
             fetchAuditTrails();
         } catch (err) {
             alert(err.message || "Gagal menjalankan simulasi paket tiba.");
+        }
+    }
+
+    function openManualTrackingModal(ord) {
+        setManualTrackingModalOrder(ord);
+        setManualTrackingResi(ord.tracking_number || "");
+        setManualTrackingCourier(ord.courier || "manual");
+        setManualTrackingUpdateStatus(ord.status === "paid" || ord.status === "processing");
+    }
+
+    async function handleSaveManualTracking(e) {
+        e.preventDefault();
+        if (!manualTrackingModalOrder) return;
+        if (!manualTrackingResi.trim()) {
+            alert("Nomor resi wajib diisi.");
+            return;
+        }
+
+        try {
+            setManualTrackingSubmitting(true);
+            const res = await apiRequest(`/shipping/manual-tracking/${manualTrackingModalOrder.id}`, {
+                method: "POST",
+                useAdminToken: true,
+                body: JSON.stringify({
+                    tracking_number: manualTrackingResi.trim(),
+                    courier: manualTrackingCourier.trim(),
+                    update_order_status: manualTrackingUpdateStatus,
+                }),
+            });
+
+            // Update in orders list
+            setOrders((prev) =>
+                prev.map((o) =>
+                    o.id === manualTrackingModalOrder.id
+                        ? {
+                              ...o,
+                              tracking_number: res.tracking_number,
+                              courier: res.courier,
+                              tracking_url: res.tracking_url,
+                              status: res.order_status || o.status,
+                          }
+                        : o
+                )
+            );
+
+            // Update printOrder if active
+            if (printOrder && printOrder.id === manualTrackingModalOrder.id) {
+                setPrintOrder((prev) => ({
+                    ...prev,
+                    tracking_number: res.tracking_number,
+                    courier: res.courier,
+                    tracking_url: res.tracking_url,
+                    status: res.order_status || prev.status,
+                }));
+            }
+
+            showToast("Nomor resi berhasil disimpan! 📦");
+            setManualTrackingModalOrder(null);
+            fetchAuditTrails();
+        } catch (err) {
+            alert(err.message || "Gagal menyimpan nomor resi.");
+        } finally {
+            setManualTrackingSubmitting(false);
         }
     }
 
@@ -1564,6 +1634,32 @@ export default function AdminDashboardPage() {
                                                 {/* DELIVERY ORDER: Status otomatis ikut kurir / biteship */}
                                                 {((ord.fulfillment_method || ord.order_type) === "delivery") ? (
                                                     <>
+                                                        {/* Resi Kurir (Manual / Otomatis) */}
+                                                        {ord.tracking_number ? (
+                                                            <div className="flex items-center gap-1.5 rounded-xl border border-sky-500/40 bg-sky-950/40 px-3 py-1.5 text-xs">
+                                                                <span className="text-sky-300 font-bold">📦 Resi:</span>
+                                                                <span className="font-mono font-bold text-white uppercase">{ord.tracking_number}</span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => openManualTrackingModal(ord)}
+                                                                    className="text-[10px] text-sky-400 hover:text-sky-200 underline font-semibold ml-1"
+                                                                    title="Edit Nomor Resi"
+                                                                >
+                                                                    ✏️ Ubah
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => openManualTrackingModal(ord)}
+                                                                title="Input nomor resi pengiriman kurir manual"
+                                                                className="rounded-xl border border-[#3E3234] bg-[#221B1D] px-3 py-2 text-xs font-semibold text-[#D1C7BD] hover:bg-[#2E2527] hover:text-white transition flex items-center gap-1.5"
+                                                            >
+                                                                <span>📦</span>
+                                                                <span>Input Resi Manual</span>
+                                                            </button>
+                                                        )}
+
                                                         {ord.status === "processing" && (
                                                             <button
                                                                 type="button"
@@ -3927,6 +4023,105 @@ export default function AdminDashboardPage() {
                             alt="Bukti Transfer Refund"
                             className="max-h-[70vh] w-full rounded-xl object-contain bg-black/40"
                         />
+                    </div>
+                </div>
+            )}
+
+            {/* ── Manual Tracking / Resi Modal ────────────────────────────────────────── */}
+            {manualTrackingModalOrder && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div
+                        className="fixed inset-0 bg-black/85 backdrop-blur-sm"
+                        onClick={() => setManualTrackingModalOrder(null)}
+                    />
+                    <div className="relative z-10 max-w-md w-full rounded-2xl border border-[#3E3234] bg-[#221B1D] p-5 shadow-2xl">
+                        <div className="flex items-center justify-between border-b border-[#2E2527] pb-3 mb-4">
+                            <div className="flex items-center gap-2">
+                                <span className="text-lg">📦</span>
+                                <div>
+                                    <h3 className="text-sm font-bold text-white">Input No. Resi Pengiriman</h3>
+                                    <p className="text-[11px] text-[#A89F97]">
+                                        Order #{manualTrackingModalOrder.order_code || manualTrackingModalOrder.id} • {manualTrackingModalOrder.customer_name || manualTrackingModalOrder.recipient_name}
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setManualTrackingModalOrder(null)}
+                                className="rounded-lg p-1 text-sm text-[#A89F97] hover:bg-[#2E2527] hover:text-white"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSaveManualTracking} className="space-y-4">
+                            <div>
+                                <label className="mb-1 block text-xs font-semibold text-[#D1C7BD]">
+                                    Nomor Resi / AWB <span className="text-red-400">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    value={manualTrackingResi}
+                                    onChange={(e) => setManualTrackingResi(e.target.value.toUpperCase())}
+                                    placeholder="Contoh: PXL-12345678, JNE98765432, KURIR-01"
+                                    required
+                                    className="w-full rounded-xl border border-[#3E3234] bg-[#191415] px-3.5 py-2.5 text-sm font-mono font-bold text-white uppercase outline-none focus:border-[#E8A598]"
+                                />
+                                <span className="text-[10px] text-[#A89F97] mt-0.5 block">
+                                    Nomor resi ini otomatis muncul di struk thermal lengkap dengan Barcode.
+                                </span>
+                            </div>
+
+                            <div>
+                                <label className="mb-1 block text-xs font-semibold text-[#D1C7BD]">
+                                    Nama Ekspedisi / Kurir
+                                </label>
+                                <select
+                                    value={manualTrackingCourier}
+                                    onChange={(e) => setManualTrackingCourier(e.target.value)}
+                                    className="w-full rounded-xl border border-[#3E3234] bg-[#191415] px-3.5 py-2.5 text-xs font-semibold text-white outline-none focus:border-[#E8A598]"
+                                >
+                                    <option value="manual">🛵 Kurir Toko / Manual</option>
+                                    <option value="paxel">❄️ Paxel</option>
+                                    <option value="gosend">🛵 GoSend</option>
+                                    <option value="grab">🛵 GrabExpress</option>
+                                    <option value="lalamove">🚚 Lalamove</option>
+                                    <option value="jne">📦 JNE</option>
+                                    <option value="j&t">📦 J&T Express</option>
+                                    <option value="sicepat">📦 SiCepat</option>
+                                    <option value="anteraja">📦 AnterAja</option>
+                                </select>
+                            </div>
+
+                            <label className="flex items-center gap-2 cursor-pointer bg-[#1A1416] p-3 rounded-xl border border-[#2E2527]">
+                                <input
+                                    type="checkbox"
+                                    checked={manualTrackingUpdateStatus}
+                                    onChange={(e) => setManualTrackingUpdateStatus(e.target.checked)}
+                                    className="h-4 w-4 rounded border-[#3E3234] text-[#7A2E3A] focus:ring-[#7A2E3A] accent-[#7A2E3A]"
+                                />
+                                <span className="text-xs text-[#D1C7BD]">
+                                    Ubah status pesanan menjadi <strong className="text-emerald-400">Dalam Pengiriman</strong> (Delivered)
+                                </span>
+                            </label>
+
+                            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#2E2527]">
+                                <button
+                                    type="button"
+                                    onClick={() => setManualTrackingModalOrder(null)}
+                                    className="rounded-xl border border-[#3E3234] px-4 py-2 text-xs font-semibold text-[#D1C7BD] hover:bg-[#2E2527] transition"
+                                >
+                                    Batal
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={manualTrackingSubmitting || !manualTrackingResi.trim()}
+                                    className="rounded-xl bg-[#7A2E3A] px-5 py-2 text-xs font-bold text-white hover:bg-[#64252F] transition disabled:opacity-50"
+                                >
+                                    {manualTrackingSubmitting ? "Menyimpan..." : "Simpan No. Resi"}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}

@@ -26,8 +26,9 @@ export function getImageUrl(path) {
 }
 
 /**
- * Mem-parse string tanggal/waktu dari backend UTC menjadi objek Date lokal (WIB / browser).
- * Menangani kasus di mana backend mengembalikan ISO string tanpa akhiran 'Z' (naive UTC).
+ * Mem-parse string tanggal/waktu dari backend menjadi objek Date lokal (WIB / browser).
+ * Di database, waktu pesanan dan transaksi disimpan dalam waktu lokal server (WIB).
+ * Kita parse langsung tanpa memaksa offset UTC 'Z' agar tidak tergeser +7 jam ke masa depan.
  */
 export function parseUtcDate(val) {
     if (!val) return null;
@@ -35,11 +36,8 @@ export function parseUtcDate(val) {
     if (typeof val === "string") {
         const trimmed = val.trim();
         if (!trimmed) return null;
-        // Jika belum ada 'Z' dan belum ada offset (+07:00 / -05:00), tambahkan 'Z' agar dibaca sebagai UTC
-        if (!trimmed.endsWith("Z") && !/[+-]\d{2}(:\d{2})?$/.test(trimmed)) {
-            return new Date(trimmed + "Z");
-        }
-        return new Date(trimmed);
+        const cleanStr = trimmed.replace(/Z$/i, "").replace(" ", "T");
+        return new Date(cleanStr);
     }
     return new Date(val);
 }
