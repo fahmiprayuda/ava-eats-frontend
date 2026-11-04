@@ -465,7 +465,7 @@ export default function Home() {
             <p className="brand-eyebrow">HOMEMADE WITH LOVE</p>
             <h1>Ava Eats</h1>
             <p className="brand-tagline">
-              Nourishing meals for your little one
+              Nourishing meals for the soul
             </p>
           </div>
 
@@ -648,20 +648,20 @@ export default function Home() {
       <section className="menu-section">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">OUR KITCHEN</p>
+            <p className="eyebrow">Yummy things are here!</p>
             <h2>Mau makan apa?</h2>
-            <p className="section-subtitle">
-              {activeTab === "available"
-                ? "Pilih hidangan lezat yang siap dipesan hari ini."
-                : "Katalog seluruh hidangan Ava Eats (Info ketersediaan & detail resep)."}
-            </p>
+            {activeTab !== "available" && (
+              <p className="section-subtitle">
+                Katalog seluruh hidangan Ava Eats (Info ketersediaan & detail resep).
+              </p>
+            )}
           </div>
           <span className="menu-count">
             {visibleProducts.length} menu {activeTab === "available" ? "tersedia" : "katalog"}
           </span>
         </div>
 
-        {/* ── Mode Tab Menu: AVAILABLE (Siap Dipesan) vs KATALOG MENU (Semua) ── */}
+        {/* ── Mode Tab Menu: AVAILABLE (Available Menu) vs KATALOG MENU (Menu Catalog) ── */}
         <div className="menu-tabs mb-3" role="tablist" aria-label="Mode Menu">
           <button
             type="button"
@@ -670,7 +670,7 @@ export default function Home() {
             className={activeTab === "available" ? "active font-bold" : ""}
             onClick={() => setActiveTab("available")}
           >
-            🛍️ Siap Dipesan
+            🛍️ Available Menu
           </button>
           <button
             type="button"
@@ -679,7 +679,7 @@ export default function Home() {
             className={activeTab === "catalog" ? "active font-bold" : ""}
             onClick={() => setActiveTab("catalog")}
           >
-            📖 Katalog Menu
+            📖 Menu Catalog
           </button>
         </div>
 
@@ -689,7 +689,7 @@ export default function Home() {
             type="search"
             placeholder={
               activeTab === "available"
-                ? "Cari menu yang siap dipesan..."
+                ? "Search your cravings..."
                 : "Cari di katalog hidangan..."
             }
             value={search}
@@ -836,7 +836,7 @@ export default function Home() {
                     )}
 
                     <div className="mt-auto pt-1">
-                      <span className="block text-[7.5px] text-[#9C9185]">Mulai dari</span>
+                      <span className="block text-[7.5px] text-[#9C9185]">Harga/price</span>
                       <span className="block text-[11px] font-extrabold text-[#7A2E3A] leading-tight">
                         {formatRupiah(product.price)}
                       </span>
@@ -905,7 +905,7 @@ export default function Home() {
 
                       <div className="product-bottom mt-auto pt-1 flex items-end justify-between gap-1">
                         <div>
-                          <span className="block text-[7.5px] text-[#9C9185]">Mulai dari</span>
+                          <span className="block text-[7.5px] text-[#9C9185]">Harga/price</span>
                           <span className="block text-[11px] font-extrabold text-[#7A2E3A] leading-tight">
                             {formatRupiah(product.price)}
                           </span>
