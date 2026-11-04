@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { showToast, showAlert } from "@/components/ModernDialog";
 
 /**
  * Modal Pemilihan Titik Lokasi GPS Interaktif
@@ -159,7 +160,7 @@ export default function LocationPickerModal({
     // Deteksi GPS Perangkat Saat Ini secara instan
     const handleGetCurrentLocation = () => {
         if (!navigator.geolocation) {
-            alert("Perangkat Anda tidak mendukung geolokasi GPS.");
+            showAlert("Perangkat Anda tidak mendukung fitur geolokasi GPS.", { type: "warning" });
             return;
         }
 
@@ -188,7 +189,7 @@ export default function LocationPickerModal({
                     },
                     () => {
                         setGpsDetecting(false);
-                        alert("Tidak dapat mengakses GPS. Pastikan izin lokasi aktif di browser Anda.");
+                        showAlert("Tidak dapat mengakses sinyal GPS. Pastikan izin akses lokasi telah diaktifkan pada pengaturan browser Anda.", { type: "warning" });
                     },
                     { enableHighAccuracy: true, timeout: 5000 }
                 );
@@ -217,10 +218,10 @@ export default function LocationPickerModal({
                     mapInstanceRef.current.flyTo([lat, lon], 17, { duration: 1.2 });
                 }
             } else {
-                alert(`Lokasi "${searchQuery}" tidak ditemukan. Coba gunakan nama jalan atau kelurahan.`);
+                showToast(`Lokasi "${searchQuery}" tidak ditemukan. Coba gunakan nama jalan atau kelurahan.`, "warning");
             }
         } catch {
-            alert("Gagal melakukan pencarian lokasi.");
+            showToast("Gagal melakukan pencarian lokasi.", "error");
         } finally {
             setSearching(false);
         }

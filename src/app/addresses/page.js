@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiRequest } from "@/lib/api";
 import LocationPickerModal from "@/components/LocationPickerModal";
+import { showAlert, showConfirm, showToast } from "@/components/ModernDialog";
 
 function AddressManager() {
     const router = useRouter();
@@ -213,11 +214,19 @@ function AddressManager() {
 
     async function handleDelete(addrId, isDef) {
         if (isDef) {
-            alert("Alamat utama tidak dapat dihapus langsung. Pilih alamat lain sebagai utama terlebih dahulu.");
+            showAlert("Alamat utama tidak dapat dihapus langsung. Pilih alamat lain sebagai alamat utama terlebih dahulu.", {
+                title: "Alamat Utama",
+                type: "warning",
+            });
             return;
         }
 
-        if (!confirm("Apakah lo yakin ingin menghapus alamat ini?")) {
+        const confirmed = await showConfirm("Apakah Anda yakin ingin menghapus alamat ini dari daftar alamat Anda?", {
+            title: "Hapus Alamat",
+            type: "danger",
+            confirmText: "Ya, Hapus",
+        });
+        if (!confirmed) {
             return;
         }
 
@@ -227,9 +236,11 @@ function AddressManager() {
             });
             const res = await apiRequest(`/customers/${customer.id}/addresses`);
             setAddresses(res.addresses || []);
+            showToast("Alamat berhasil dihapus.");
             setSuccessMsg("Alamat berhasil dihapus.");
             setTimeout(() => setSuccessMsg(""), 3000);
         } catch (err) {
+            showToast(err.message || "Gagal menghapus alamat.", "error");
             setError(err.message || "Gagal menghapus alamat.");
         }
     }

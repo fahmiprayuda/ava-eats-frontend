@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiRequest, getImageUrl, parseUtcDate, formatDateTime } from "@/lib/api";
 import ThermalReceiptModal from "@/components/ThermalReceiptModal";
+import { showToast as modernToast, showAlert, showConfirm } from "@/components/ModernDialog";
 
 const formatRupiah = (amount) =>
     new Intl.NumberFormat("id-ID", {
@@ -169,9 +170,8 @@ export default function AdminDashboardPage() {
     const [promoCustomerSearch, setPromoCustomerSearch] = useState("");
     const [savingPromo, setSavingPromo] = useState(false);
 
-    const showToast = (msg) => {
-        setToast(msg);
-        setTimeout(() => setToast(""), 3500);
+    const showToast = (msg, type = "success") => {
+        modernToast(msg, type);
     };
 
     const fetchOrders = useCallback(async () => {
@@ -364,7 +364,7 @@ export default function AdminDashboardPage() {
             fetchOrders();
             fetchAuditTrails();
         } catch (err) {
-            alert(err.message || "Gagal memperbarui status pesanan.");
+            showToast(err.message || "Gagal memperbarui status pesanan.", "error");
         }
     }
 
@@ -378,7 +378,7 @@ export default function AdminDashboardPage() {
             fetchOrders();
             fetchAuditTrails();
         } catch (err) {
-            alert(err.message || "Gagal menjalankan simulasi kurir.");
+            showToast(err.message || "Gagal menjalankan simulasi kurir.", "error");
         }
     }
 
@@ -392,7 +392,7 @@ export default function AdminDashboardPage() {
             fetchOrders();
             fetchAuditTrails();
         } catch (err) {
-            alert(err.message || "Gagal menjalankan simulasi paket tiba.");
+            showToast(err.message || "Gagal menjalankan simulasi paket tiba.", "error");
         }
     }
 
@@ -407,7 +407,7 @@ export default function AdminDashboardPage() {
         e.preventDefault();
         if (!manualTrackingModalOrder) return;
         if (!manualTrackingResi.trim()) {
-            alert("Nomor resi wajib diisi.");
+            showToast("Nomor resi wajib diisi.", "warning");
             return;
         }
 
@@ -453,7 +453,7 @@ export default function AdminDashboardPage() {
             setManualTrackingModalOrder(null);
             fetchAuditTrails();
         } catch (err) {
-            alert(err.message || "Gagal menyimpan nomor resi.");
+            showToast(err.message || "Gagal menyimpan nomor resi.", "error");
         } finally {
             setManualTrackingSubmitting(false);
         }
@@ -486,7 +486,7 @@ export default function AdminDashboardPage() {
             fetchOrders();
             fetchAuditTrails();
         } catch (err) {
-            alert(err.message || "Gagal membatalkan pesanan.");
+            showToast(err.message || "Gagal membatalkan pesanan.", "error");
         } finally {
             setCancelSubmitting(false);
         }
@@ -503,12 +503,12 @@ export default function AdminDashboardPage() {
         if (!file) return;
 
         if (!file.type.startsWith("image/")) {
-            alert("File harus berupa gambar bukti transfer (JPG, PNG, WEBP).");
+            showToast("File harus berupa gambar bukti transfer (JPG, PNG, WEBP).", "warning");
             return;
         }
 
         if (file.size > 5 * 1024 * 1024) {
-            alert("Ukuran bukti transfer maksimal 5 MB.");
+            showToast("Ukuran bukti transfer maksimal 5 MB.", "warning");
             return;
         }
 
@@ -528,7 +528,7 @@ export default function AdminDashboardPage() {
                 showToast("Bukti transfer berhasil diunggah! 🧾");
             }
         } catch (err) {
-            alert(err.message || "Gagal mengunggah bukti transfer.");
+            showToast(err.message || "Gagal mengunggah bukti transfer.", "error");
         } finally {
             setUploadingRefundProof(false);
         }
@@ -552,7 +552,7 @@ export default function AdminDashboardPage() {
             fetchOrders();
             fetchAuditTrails();
         } catch (err) {
-            alert(err.message || "Gagal mengonfirmasi refund.");
+            showToast(err.message || "Gagal mengonfirmasi refund.", "error");
         } finally {
             setRefundSubmitting(false);
         }
@@ -560,7 +560,7 @@ export default function AdminDashboardPage() {
 
     async function handleToggleAvailability(productId, currentAvailability, stock) {
         if (!currentAvailability && stock <= 0) {
-            alert("Produk tidak bisa diaktifkan karena stok 0. Tambah stok terlebih dahulu.");
+            showToast("Produk tidak bisa diaktifkan karena stok 0. Tambah stok terlebih dahulu.", "warning");
             return;
         }
 
@@ -574,7 +574,7 @@ export default function AdminDashboardPage() {
             fetchProducts();
             fetchAuditTrails();
         } catch (err) {
-            alert(err.message || "Gagal memperbarui ketersediaan.");
+            showToast(err.message || "Gagal memperbarui ketersediaan.", "error");
         }
     }
 
@@ -613,12 +613,12 @@ export default function AdminDashboardPage() {
         if (!file) return;
 
         if (!file.type.startsWith("image/")) {
-            alert("File harus berupa gambar (JPG, PNG, WEBP, GIF).");
+            showToast("File harus berupa gambar (JPG, PNG, WEBP, GIF).", "warning");
             return;
         }
 
         if (file.size > 5 * 1024 * 1024) {
-            alert("Ukuran foto maksimal 5 MB.");
+            showToast("Ukuran foto maksimal 5 MB.", "warning");
             return;
         }
 
@@ -638,7 +638,7 @@ export default function AdminDashboardPage() {
                 showToast("Foto berhasil diunggah dari perangkat! 📸");
             }
         } catch (err) {
-            alert(err.message || "Gagal mengunggah gambar produk.");
+            showToast(err.message || "Gagal mengunggah gambar produk.", "error");
         } finally {
             setUploadingImage(false);
         }
@@ -649,17 +649,17 @@ export default function AdminDashboardPage() {
         setErrorMsg("");
 
         if (prodName.trim().length < 3) {
-            alert("Nama produk minimal 3 karakter.");
+            showToast("Nama produk minimal 3 karakter.", "warning");
             return;
         }
 
         if (Number(prodPrice) <= 0) {
-            alert("Harga produk harus lebih dari 0.");
+            showToast("Harga produk harus lebih dari 0.", "warning");
             return;
         }
 
         if (Number(prodWeight) <= 0) {
-            alert("Berat produk harus lebih dari 0 gram.");
+            showToast("Berat produk harus lebih dari 0 gram.", "warning");
             return;
         }
 
@@ -699,14 +699,22 @@ export default function AdminDashboardPage() {
             fetchProducts();
             fetchAuditTrails();
         } catch (err) {
-            alert(err.message || "Gagal menyimpan produk.");
+            showToast(err.message || "Gagal menyimpan produk.", "error");
         } finally {
             setSavingProduct(false);
         }
     }
 
     async function handleDeleteProduct(p) {
-        if (!confirm(`Hapus permanen menu '${p.name}'?`)) return;
+        const confirmed = await showConfirm(
+            `Hapus permanen menu '${p.name}'? Menu ini tidak akan lagi muncul di katalog pembeli.`,
+            {
+                title: "Hapus Menu",
+                type: "danger",
+                confirmText: "Ya, Hapus",
+            }
+        );
+        if (!confirmed) return;
 
         try {
             await apiRequest(`/products/${p.id}`, {
@@ -717,7 +725,7 @@ export default function AdminDashboardPage() {
             fetchProducts();
             fetchAuditTrails();
         } catch (err) {
-            alert(err.message || "Gagal menghapus produk.");
+            showToast(err.message || "Gagal menghapus produk.", "error");
         }
     }
 
@@ -760,7 +768,7 @@ export default function AdminDashboardPage() {
             fetchProducts();
             fetchAuditTrails();
         } catch (err) {
-            alert(err.message || "Gagal menyimpan stok.");
+            showToast(err.message || "Gagal menyimpan stok.", "error");
         }
     }
 
@@ -786,7 +794,7 @@ export default function AdminDashboardPage() {
     async function handleSaveCategory(e) {
         e.preventDefault();
         if (!categoryFormName.trim()) {
-            alert("Nama kategori tidak boleh kosong.");
+            showToast("Nama kategori tidak boleh kosong.", "warning");
             return;
         }
 
@@ -820,16 +828,22 @@ export default function AdminDashboardPage() {
             fetchProducts();
             fetchAuditTrails();
         } catch (err) {
-            alert(err.message || "Gagal menyimpan kategori.");
+            showToast(err.message || "Gagal menyimpan kategori.", "error");
         } finally {
             setSavingCategory(false);
         }
     }
 
     async function handleDeleteCategory(cat) {
-        if (!confirm(`Hapus kategori '${cat.name}'? Menu di dalamnya tidak akan terhapus, melainkan diubah menjadi tanpa kategori.`)) {
-            return;
-        }
+        const confirmed = await showConfirm(
+            `Hapus kategori '${cat.name}'? Menu di dalamnya tidak akan terhapus, melainkan diubah menjadi tanpa kategori.`,
+            {
+                title: "Hapus Kategori",
+                type: "warning",
+                confirmText: "Ya, Hapus",
+            }
+        );
+        if (!confirmed) return;
 
         try {
             await apiRequest(`/categories/${cat.id}`, {
@@ -841,7 +855,7 @@ export default function AdminDashboardPage() {
             fetchProducts();
             fetchAuditTrails();
         } catch (err) {
-            alert(err.message || "Gagal menghapus kategori.");
+            showToast(err.message || "Gagal menghapus kategori.", "error");
         }
     }
 
@@ -888,7 +902,7 @@ export default function AdminDashboardPage() {
                 showToast(`Data admin '${adminFormUsername}' berhasil diperbarui! 👤`);
             } else {
                 if (!adminFormPassword || adminFormPassword.length < 6) {
-                    alert("Password minimal 6 karakter.");
+                    showToast("Password minimal 6 karakter.", "warning");
                     setSavingAdmin(false);
                     return;
                 }
@@ -909,14 +923,22 @@ export default function AdminDashboardPage() {
             fetchAdmins();
             fetchAuditTrails();
         } catch (err) {
-            alert(err.message || "Gagal menyimpan data admin.");
+            showToast(err.message || "Gagal menyimpan data admin.", "error");
         } finally {
             setSavingAdmin(false);
         }
     }
 
     async function handleDeleteAdmin(adminId, username) {
-        if (!confirm(`Yakin ingin menghapus akun admin '${username}'?`)) return;
+        const confirmed = await showConfirm(
+            `Yakin ingin menghapus akun admin '${username}'? Akses admin ini akan langsung dicabut.`,
+            {
+                title: "Hapus Akun Admin",
+                type: "danger",
+                confirmText: "Ya, Hapus",
+            }
+        );
+        if (!confirmed) return;
 
         try {
             await apiRequest(`/admins/${adminId}`, {
@@ -927,7 +949,7 @@ export default function AdminDashboardPage() {
             fetchAdmins();
             fetchAuditTrails();
         } catch (err) {
-            alert(err.message || "Gagal menghapus admin.");
+            showToast(err.message || "Gagal menghapus admin.", "error");
         }
     }
 
@@ -970,7 +992,7 @@ export default function AdminDashboardPage() {
                 showToast(`Data pelanggan '${customerFormName}' berhasil diperbarui! 👤`);
             } else {
                 if (!customerFormPassword || customerFormPassword.length < 6) {
-                    alert("Password minimal 6 karakter.");
+                    showToast("Password minimal 6 karakter.", "warning");
                     setSavingCustomer(false);
                     return;
                 }
@@ -990,14 +1012,22 @@ export default function AdminDashboardPage() {
             fetchCustomers();
             fetchAuditTrails();
         } catch (err) {
-            alert(err.message || "Gagal menyimpan data pelanggan.");
+            showToast(err.message || "Gagal menyimpan data pelanggan.", "error");
         } finally {
             setSavingCustomer(false);
         }
     }
 
     async function handleDeleteCustomer(customerId, name) {
-        if (!confirm(`Yakin ingin menghapus akun pelanggan '${name}'?`)) return;
+        const confirmed = await showConfirm(
+            `Yakin ingin menghapus akun pelanggan '${name}'?`,
+            {
+                title: "Hapus Akun Pelanggan",
+                type: "danger",
+                confirmText: "Ya, Hapus",
+            }
+        );
+        if (!confirmed) return;
 
         try {
             await apiRequest(`/customers/admin/${customerId}`, {
@@ -1008,7 +1038,7 @@ export default function AdminDashboardPage() {
             fetchCustomers();
             fetchAuditTrails();
         } catch (err) {
-            alert(err.message || "Gagal menghapus pelanggan.");
+            showToast(err.message || "Gagal menghapus pelanggan.", "error");
         }
     }
 
@@ -1093,19 +1123,19 @@ export default function AdminDashboardPage() {
         e.preventDefault();
         const codeClean = promoCode.trim().toUpperCase();
         if (!codeClean) {
-            alert("Kode promo tidak boleh kosong.");
+            showToast("Kode promo tidak boleh kosong.", "warning");
             return;
         }
         if (!promoName.trim()) {
-            alert("Nama promo tidak boleh kosong.");
+            showToast("Nama promo tidak boleh kosong.", "warning");
             return;
         }
         if (Number(promoDiscountValue) <= 0) {
-            alert("Nilai diskon harus lebih besar dari 0.");
+            showToast("Nilai diskon harus lebih besar dari 0.", "warning");
             return;
         }
         if (promoTargetType === "specific" && promoSelectedCustomerIds.length === 0) {
-            alert("Silakan pilih minimal 1 pelanggan untuk kupon bertarget khusus.");
+            showToast("Silakan pilih minimal 1 pelanggan untuk kupon bertarget khusus.", "warning");
             return;
         }
 
@@ -1148,7 +1178,7 @@ export default function AdminDashboardPage() {
             fetchPromos();
             fetchAuditTrails();
         } catch (err) {
-            alert(err.message || "Gagal menyimpan kode promo.");
+            showToast(err.message || "Gagal menyimpan kode promo.", "error");
         } finally {
             setSavingPromo(false);
         }
@@ -1164,12 +1194,20 @@ export default function AdminDashboardPage() {
             fetchPromos();
             fetchAuditTrails();
         } catch (err) {
-            alert(err.message || "Gagal mengubah status promo.");
+            showToast(err.message || "Gagal mengubah status promo.", "error");
         }
     }
 
     async function handleDeletePromo(promo) {
-        if (!confirm(`Hapus voucher promo '${promo.code}'?`)) return;
+        const confirmed = await showConfirm(
+            `Hapus voucher promo '${promo.code}'? Kupon ini tidak akan bisa digunakan lagi oleh pelanggan.`,
+            {
+                title: "Hapus Voucher Promo",
+                type: "danger",
+                confirmText: "Ya, Hapus",
+            }
+        );
+        if (!confirmed) return;
 
         try {
             await apiRequest(`/promos/${promo.id}`, {
@@ -1180,7 +1218,7 @@ export default function AdminDashboardPage() {
             fetchPromos();
             fetchAuditTrails();
         } catch (err) {
-            alert(err.message || "Gagal menghapus promo.");
+            showToast(err.message || "Gagal menghapus promo.", "error");
         }
     }
 

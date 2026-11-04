@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiRequest, getImageUrl, parseUtcDate } from "@/lib/api";
+import { showToast } from "@/components/ModernDialog";
 
 const formatRupiah = (amount) =>
     new Intl.NumberFormat("id-ID", {
@@ -480,7 +481,7 @@ function OrdersContent() {
     // ── Repeat Order handler ─────────────────────────────────────────────
     const handleRepeatOrder = async (order) => {
         if (!order || !order.items || order.items.length === 0) {
-            alert("Tidak ada item dalam pesanan ini.");
+            showToast("Tidak ada item dalam pesanan ini.", "warning");
             return;
         }
 
@@ -578,7 +579,7 @@ function OrdersContent() {
             }
         } catch (err) {
             console.error("Gagal memeriksa ketersediaan menu:", err);
-            alert("Gagal memeriksa ketersediaan menu. Silakan coba kembali beberapa saat lagi.");
+            showToast("Gagal memeriksa ketersediaan menu. Silakan coba kembali beberapa saat lagi.", "error");
         } finally {
             setRepeatLoadingId(null);
         }
@@ -1009,7 +1010,7 @@ function OrdersContent() {
                                                                         await apiRequest(`/shipping/simulate/${order.id}`, { method: "POST" });
                                                                         loadOrders();
                                                                     } catch (e) {
-                                                                        alert("Simulasi gagal: " + e.message);
+                                                                        showToast("Simulasi gagal: " + e.message, "error");
                                                                     }
                                                                 }}
                                                                 className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-[#D5C2B8] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#7A3545] shadow-xs hover:bg-[#FAF7F2] transition"
@@ -1051,7 +1052,7 @@ function OrdersContent() {
                                                                         await apiRequest(`/shipping/simulate/${order.id}`, { method: "POST" });
                                                                         loadOrders();
                                                                     } catch (e) {
-                                                                        alert("Simulasi gagal: " + e.message);
+                                                                        showToast("Simulasi gagal: " + e.message, "error");
                                                                     }
                                                                 }}
                                                                 className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-[#D5C2B8] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#7A3545] shadow-xs hover:bg-[#FAF7F2] transition"
