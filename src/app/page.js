@@ -650,11 +650,6 @@ export default function Home() {
           <div>
             <p className="eyebrow">Yummy things are here!</p>
             <h2>Mau makan apa?</h2>
-            {activeTab !== "available" && (
-              <p className="section-subtitle">
-                Katalog seluruh hidangan Ava Eats (Info ketersediaan & detail resep).
-              </p>
-            )}
           </div>
           <span className="menu-count">
             {visibleProducts.length} menu {activeTab === "available" ? "tersedia" : "katalog"}
@@ -836,7 +831,7 @@ export default function Home() {
                     )}
 
                     <div className="mt-auto pt-1">
-                      <span className="block text-[7.5px] text-[#9C9185]">Harga/price</span>
+                      <span className="block text-[7.5px] text-[#9C9185]">Harga</span>
                       <span className="block text-[11px] font-extrabold text-[#7A2E3A] leading-tight">
                         {formatRupiah(product.price)}
                       </span>
@@ -905,7 +900,7 @@ export default function Home() {
 
                       <div className="product-bottom mt-auto pt-1 flex items-end justify-between gap-1">
                         <div>
-                          <span className="block text-[7.5px] text-[#9C9185]">Harga/price</span>
+                          <span className="block text-[7.5px] text-[#9C9185]">Harga</span>
                           <span className="block text-[11px] font-extrabold text-[#7A2E3A] leading-tight">
                             {formatRupiah(product.price)}
                           </span>
