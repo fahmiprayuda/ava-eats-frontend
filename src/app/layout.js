@@ -56,7 +56,7 @@ export default function RootLayout({ children }) {
           src={MIDTRANS_SNAP_URL}
           data-client-key={
             process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY ||
-            "Mid-client-csJpSbJb7RQ36tmj"
+            "Mid-client-BcnM0gyPcw8zbVjO"
           }
           strategy="afterInteractive"
         />

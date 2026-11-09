@@ -1137,7 +1137,7 @@ export default function CheckoutPage() {
                             </span>
                         </label>
 
-                        {/* Opsi 2: BCA Virtual Account */}
+                        {/* Opsi 2: Virtual Account */}
                         <label
                             className={`payment-option ${paymentMethod === "bank_transfer" ? "selected" : ""}`}
                         >
@@ -1151,12 +1151,9 @@ export default function CheckoutPage() {
                             <span className="payment-icon text-2xl">🏦</span>
                             <span className="payment-copy">
                                 <strong className="flex items-center gap-2">
-                                    BCA Virtual Account
-                                    <span className="rounded-full bg-blue-100 text-blue-800 px-2 py-0.5 text-[10px] font-bold">
-                                        BCA
-                                    </span>
+                                    Virtual Account
                                 </strong>
-                                <small>Bayar instan & otomatis via BCA mobile, myBCA, KlikBCA, atau ATM BCA</small>
+                                <small>Mandiri, BNI, BRI, Permata, CIMB Niaga & bank lainnya</small>
                             </span>
                             <span className="payment-check">
                                 {paymentMethod === "bank_transfer" ? "✓" : ""}
