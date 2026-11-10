@@ -2562,7 +2562,6 @@ export default function AdminDashboardPage() {
             {showProductModal && (
                 <div
                     className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4 backdrop-blur-sm"
-                    onClick={() => setShowProductModal(false)}
                 >
                     <div
                         className="relative max-h-[90vh] w-full max-w-[500px] overflow-y-auto rounded-t-3xl sm:rounded-3xl border border-[#3E3234] bg-[#221B1D] p-5 sm:p-6 shadow-2xl text-white"
@@ -2800,7 +2799,6 @@ export default function AdminDashboardPage() {
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
                     <div
                         className="fixed inset-0 bg-black/75 backdrop-blur-xs"
-                        onClick={() => !cancelSubmitting && setCancelModalOrder(null)}
                     />
                     <div className="relative z-10 w-full max-w-md rounded-2xl border border-red-500/30 bg-[#221B1D] p-5 shadow-2xl">
                         <div className="flex items-center justify-between border-b border-[#2E2527] pb-3">
@@ -2913,7 +2911,6 @@ export default function AdminDashboardPage() {
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
                     <div
                         className="fixed inset-0 bg-black/75 backdrop-blur-xs"
-                        onClick={() => !refundSubmitting && setRefundModalOrder(null)}
                     />
                     <div className="relative z-10 w-full max-w-md rounded-2xl border border-amber-500/40 bg-[#221B1D] p-5 shadow-2xl">
                         <div className="flex items-center justify-between border-b border-[#2E2527] pb-3">
@@ -3040,7 +3037,6 @@ export default function AdminDashboardPage() {
             {showAdminModal && (
                 <div
                     className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
-                    onClick={() => !savingAdmin && setShowAdminModal(false)}
                 >
                     <div
                         className="relative w-full max-w-md rounded-2xl border border-[#3E3234] bg-[#221B1D] p-5 shadow-2xl text-white"
@@ -3143,7 +3139,6 @@ export default function AdminDashboardPage() {
             {showCustomerModal && (
                 <div
                     className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
-                    onClick={() => !savingCustomer && setShowCustomerModal(false)}
                 >
                     <div
                         className="relative w-full max-w-md rounded-2xl border border-[#3E3234] bg-[#221B1D] p-5 shadow-2xl text-white"
@@ -3240,7 +3235,6 @@ export default function AdminDashboardPage() {
                 return (
                     <div
                         className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3 sm:p-4 backdrop-blur-sm"
-                        onClick={() => setSelectedHistoryCustomer(null)}
                     >
                         <div
                             className="relative max-h-[90vh] w-full max-w-2xl flex flex-col overflow-hidden rounded-2xl sm:rounded-3xl border border-[#3E3234] bg-[#221B1D] shadow-2xl text-white"
@@ -3416,7 +3410,6 @@ export default function AdminDashboardPage() {
             {showPromoModal && (
                 <div
                     className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4 backdrop-blur-sm"
-                    onClick={() => !savingPromo && setShowPromoModal(false)}
                 >
                     <div
                         className="relative max-h-[90dvh] sm:max-h-[90vh] w-full max-w-[520px] overflow-y-auto rounded-t-3xl sm:rounded-3xl border border-[#3E3234] bg-[#221B1D] p-5 sm:p-6 pb-8 sm:pb-6 shadow-2xl text-white"
@@ -3763,7 +3756,6 @@ export default function AdminDashboardPage() {
             {showCategoryManager && (
                 <div
                     className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4 backdrop-blur-sm"
-                    onClick={() => setShowCategoryManager(false)}
                 >
                     <div
                         className="relative max-h-[90dvh] sm:max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-t-3xl sm:rounded-3xl border border-[#3E3234] bg-[#221B1D] p-5 sm:p-6 pb-8 sm:pb-6 shadow-2xl text-white"
@@ -3877,7 +3869,6 @@ export default function AdminDashboardPage() {
             {showCategoryModal && (
                 <div
                     className="fixed inset-0 z-60 flex items-end sm:items-center justify-center bg-black/80 p-0 sm:p-4 backdrop-blur-sm"
-                    onClick={() => !savingCategory && setShowCategoryModal(false)}
                 >
                     <div
                         className="relative max-h-[92dvh] sm:max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-3xl sm:rounded-3xl border border-[#3E3234] bg-[#221B1D] p-5 sm:p-6 pb-8 sm:pb-6 shadow-2xl text-white"
@@ -4070,7 +4061,6 @@ export default function AdminDashboardPage() {
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
                     <div
                         className="fixed inset-0 bg-black/85 backdrop-blur-sm"
-                        onClick={() => setManualTrackingModalOrder(null)}
                     />
                     <div className="relative z-10 max-w-md w-full rounded-2xl border border-[#3E3234] bg-[#221B1D] p-5 shadow-2xl">
                         <div className="flex items-center justify-between border-b border-[#2E2527] pb-3 mb-4">
