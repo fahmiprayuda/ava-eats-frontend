@@ -38,6 +38,22 @@ export default function AdminDashboardPage() {
     // Products state
     const [products, setProducts] = useState([]);
     const [productsLoading, setProductsLoading] = useState(false);
+    const [productSearch, setProductSearch] = useState("");
+    const savedScrollYRef = useRef(0);
+    const [showScrollTop, setShowScrollTop] = useState(false);
+
+    useEffect(() => {
+        const handleScroll = () => {
+            setShowScrollTop(window.scrollY > 280);
+        };
+        window.addEventListener("scroll", handleScroll, { passive: true });
+        handleScroll();
+        return () => window.removeEventListener("scroll", handleScroll);
+    }, []);
+
+    const scrollToTop = () => {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+    };
 
     // Stock adjustments draft state (prodId -> temporary pending stock)
     const [stockEdits, setStockEdits] = useState({});
@@ -186,15 +202,15 @@ export default function AdminDashboardPage() {
         }
     }, []);
 
-    const fetchProducts = useCallback(async () => {
-        setProductsLoading(true);
+    const fetchProducts = useCallback(async ({ silent = false } = {}) => {
+        if (!silent) setProductsLoading(true);
         try {
             const data = await apiRequest("/products");
             setProducts(data.products || (Array.isArray(data) ? data : []));
         } catch (err) {
             setErrorMsg(err.message || "Gagal memuat daftar menu.");
         } finally {
-            setProductsLoading(false);
+            if (!silent) setProductsLoading(false);
         }
     }, []);
 
@@ -316,7 +332,7 @@ export default function AdminDashboardPage() {
                 if (prev <= 1) {
                     // Waktu habis: refresh data secara seamless di background
                     fetchOrders();
-                    fetchProducts();
+                    fetchProducts({ silent: true });
                     fetchCategories();
                     fetchPromos();
                     if (!auditSearchRef.current) {
@@ -571,7 +587,7 @@ export default function AdminDashboardPage() {
                 body: JSON.stringify({ is_available: !currentAvailability }),
             });
             showToast(`Ketersediaan menu berhasil diperbarui!`);
-            fetchProducts();
+            fetchProducts({ silent: true });
             fetchAuditTrails();
         } catch (err) {
             showToast(err.message || "Gagal memperbarui ketersediaan.", "error");
@@ -580,6 +596,9 @@ export default function AdminDashboardPage() {
 
     // Modal Add / Edit Product handlers
     function openAddProductModal() {
+        if (typeof window !== "undefined") {
+            savedScrollYRef.current = window.scrollY;
+        }
         setEditingProduct(null);
         setProdName("");
         setProdDescription("");
@@ -594,6 +613,9 @@ export default function AdminDashboardPage() {
     }
 
     function openEditProductModal(p) {
+        if (typeof window !== "undefined") {
+            savedScrollYRef.current = window.scrollY;
+        }
         setEditingProduct(p);
         setProdName(p.name || "");
         setProdDescription(p.description || "");
@@ -641,6 +663,16 @@ export default function AdminDashboardPage() {
             showToast(err.message || "Gagal mengunggah gambar produk.", "error");
         } finally {
             setUploadingImage(false);
+        }
+    }
+
+    function closeProductModal() {
+        setShowProductModal(false);
+        const targetY = savedScrollYRef.current;
+        if (typeof window !== "undefined" && targetY > 0) {
+            requestAnimationFrame(() => {
+                window.scrollTo({ top: targetY, behavior: "instant" });
+            });
         }
     }
 
@@ -695,9 +727,9 @@ export default function AdminDashboardPage() {
                 showToast(`Menu baru '${payload.name}' berhasil ditambahkan! 🎉`);
             }
 
-            setShowProductModal(false);
-            fetchProducts();
+            await fetchProducts({ silent: true });
             fetchAuditTrails();
+            closeProductModal();
         } catch (err) {
             showToast(err.message || "Gagal menyimpan produk.", "error");
         } finally {
@@ -722,7 +754,7 @@ export default function AdminDashboardPage() {
                 useAdminToken: true,
             });
             showToast(`Menu '${p.name}' berhasil dihapus.`);
-            fetchProducts();
+            fetchProducts({ silent: true });
             fetchAuditTrails();
         } catch (err) {
             showToast(err.message || "Gagal menghapus produk.", "error");
@@ -765,7 +797,7 @@ export default function AdminDashboardPage() {
                 return next;
             });
 
-            fetchProducts();
+            fetchProducts({ silent: true });
             fetchAuditTrails();
         } catch (err) {
             showToast(err.message || "Gagal menyimpan stok.", "error");
@@ -825,7 +857,7 @@ export default function AdminDashboardPage() {
 
             setShowCategoryModal(false);
             fetchCategories();
-            fetchProducts();
+            fetchProducts({ silent: true });
             fetchAuditTrails();
         } catch (err) {
             showToast(err.message || "Gagal menyimpan kategori.", "error");
@@ -852,7 +884,7 @@ export default function AdminDashboardPage() {
             });
             showToast(`Kategori '${cat.name}' berhasil dihapus.`);
             fetchCategories();
-            fetchProducts();
+            fetchProducts({ silent: true });
             fetchAuditTrails();
         } catch (err) {
             showToast(err.message || "Gagal menghapus kategori.", "error");
@@ -1246,6 +1278,16 @@ export default function AdminDashboardPage() {
         return o.status === orderFilter;
     });
 
+    const filteredProducts = products.filter((prod) => {
+        const q = productSearch.trim().toLowerCase();
+        if (!q) return true;
+        return (
+            prod.name?.toLowerCase().includes(q) ||
+            prod.category?.toLowerCase().includes(q) ||
+            prod.description?.toLowerCase().includes(q)
+        );
+    });
+
     const pendingCookCount = orders.filter((o) => o.status === "paid" || o.status === "processing").length;
     const totalRevenue = orders
         .filter((o) => o.status === "paid" || o.status === "completed" || o.status === "delivered")
@@ -1543,7 +1585,7 @@ export default function AdminDashboardPage() {
                             ))}
                         </div>
 
-                        {ordersLoading ? (
+                        {ordersLoading && orders.length === 0 ? (
                             <p className="py-12 text-center text-xs text-[#A89F97]">Memuat daftar pesanan...</p>
                         ) : filteredOrders.length === 0 ? (
                             <div className="rounded-2xl border border-[#342A2C] bg-[#221B1D] p-8 sm:p-12 text-center">
@@ -1844,11 +1886,65 @@ export default function AdminDashboardPage() {
                             </div>
                         </div>
 
-                        {productsLoading ? (
+                        {/* Search Bar Menu & Stok */}
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-2.5">
+                            <div className="relative flex-1">
+                                <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-xs text-[#A89F97]">
+                                    🔍
+                                </span>
+                                <input
+                                    type="text"
+                                    value={productSearch}
+                                    onChange={(e) => setProductSearch(e.target.value)}
+                                    placeholder="Cari nama menu, kategori, atau deskripsi..."
+                                    className="w-full rounded-xl border border-[#3E3234] bg-[#221B1D] pl-9 pr-9 py-2.5 text-xs text-white placeholder-[#786D6B] outline-none focus:border-[#E8A598] transition"
+                                />
+                                {productSearch && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setProductSearch("")}
+                                        aria-label="Hapus pencarian"
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 flex h-5 w-5 items-center justify-center rounded-full bg-[#3E3234] text-[10px] font-bold text-[#D1C7BD] hover:bg-[#524245] hover:text-white transition"
+                                    >
+                                        ✕
+                                    </button>
+                                )}
+                            </div>
+                            <div className="shrink-0 text-[11px] font-medium text-[#A89F97] px-1">
+                                {productSearch.trim()
+                                    ? `Menampilkan ${filteredProducts.length} dari ${products.length} menu`
+                                    : `Total ${products.length} menu`}
+                            </div>
+                        </div>
+
+                        {productsLoading && products.length === 0 ? (
                             <p className="py-12 text-center text-xs text-[#A89F97]">Memuat menu...</p>
+                        ) : filteredProducts.length === 0 ? (
+                            <div className="rounded-2xl border border-[#342A2C] bg-[#221B1D] p-10 text-center">
+                                <span className="text-3xl block mb-2">🍽️</span>
+                                <p className="text-sm font-semibold text-white">
+                                    {productSearch.trim()
+                                        ? `Menu "${productSearch}" tidak ditemukan`
+                                        : "Belum ada menu makanan"}
+                                </p>
+                                <p className="mt-1 text-xs text-[#A89F97]">
+                                    {productSearch.trim()
+                                        ? "Coba gunakan kata kunci lain atau hapus pencarian."
+                                        : "Klik tombol \"+ Tambah Menu Baru\" untuk menambahkan hidangan pertama."}
+                                </p>
+                                {productSearch.trim() && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setProductSearch("")}
+                                        className="mt-3 rounded-xl border border-[#524245] bg-[#2E2527] px-4 py-2 text-xs font-bold text-[#E8A598] hover:bg-[#3E3234] transition"
+                                    >
+                                        Reset Pencarian
+                                    </button>
+                                )}
+                            </div>
                         ) : (
                             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                                {products.map((prod) => {
+                                {filteredProducts.map((prod) => {
                                     const currentStock =
                                         stockEdits[prod.id] !== undefined
                                             ? stockEdits[prod.id]
@@ -2050,7 +2146,7 @@ export default function AdminDashboardPage() {
                         </div>
 
                         {/* Promo List Cards */}
-                        {promosLoading ? (
+                        {promosLoading && promosList.length === 0 ? (
                             <div className="rounded-2xl border border-[#2E2527] bg-[#1E1719] p-8 text-center text-xs text-[#A89F97]">
                                 Memuat data promo...
                             </div>
@@ -2257,7 +2353,7 @@ export default function AdminDashboardPage() {
                             </div>
                         </div>
 
-                        {auditLoading ? (
+                        {auditLoading && auditTrails.length === 0 ? (
                             <p className="py-12 text-center text-xs text-[#A89F97]">Memuat audit trail...</p>
                         ) : auditTrails.length === 0 ? (
                             <p className="py-12 text-center text-xs text-[#A89F97]">Belum ada aktivitas audit tersimpan.</p>
@@ -2573,7 +2669,7 @@ export default function AdminDashboardPage() {
                             </h3>
                             <button
                                 type="button"
-                                onClick={() => setShowProductModal(false)}
+                                onClick={closeProductModal}
                                 className="flex h-8 w-8 items-center justify-center rounded-full bg-[#2E2527] text-sm text-[#A89F97] hover:bg-[#3E3234]"
                             >
                                 ✕
@@ -2776,7 +2872,7 @@ export default function AdminDashboardPage() {
                             <div className="mt-5 flex gap-2 pt-2">
                                 <button
                                     type="button"
-                                    onClick={() => setShowProductModal(false)}
+                                    onClick={closeProductModal}
                                     className="flex-1 rounded-xl border border-[#3E3234] py-3 text-xs font-bold text-[#D1C7BD] hover:bg-[#2E2527]"
                                 >
                                     Batal
@@ -4160,6 +4256,30 @@ export default function AdminDashboardPage() {
                     order={printOrder}
                     onClose={() => setPrintOrder(null)}
                 />
+            )}
+
+            {/* ── Floating Back-to-Top (Up Arrow) Button ──────────────────────────── */}
+            {showScrollTop && (
+                <button
+                    type="button"
+                    onClick={scrollToTop}
+                    aria-label="Kembali ke atas"
+                    title="Kembali ke atas"
+                    className="fixed bottom-5 right-5 sm:bottom-7 sm:right-7 z-40 flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-full border border-[#E8A598]/40 bg-[#7A2E3A]/95 text-white shadow-xl shadow-black/50 backdrop-blur-md transition-all duration-200 hover:bg-[#913745] hover:scale-105 active:scale-95"
+                >
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={2.5}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="h-5 w-5"
+                    >
+                        <path d="m18 15-6-6-6 6" />
+                    </svg>
+                </button>
             )}
         </main>
     );
