@@ -2778,7 +2778,7 @@ export default function AdminDashboardPage() {
                                                 required
                                                 value={otsCustomerName}
                                                 onChange={(e) => setOtsCustomerName(e.target.value)}
-                                                placeholder="cth: Fabiola"
+                                                placeholder="cth: Shavazia"
                                                 className="w-full rounded-xl border border-[#3E3234] bg-[#191415] px-3 py-2 text-xs text-white placeholder-[#786D6B] placeholder:text-[10px] outline-none focus:border-[#E8A598]"
                                             />
                                         </div>
