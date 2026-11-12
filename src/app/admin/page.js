@@ -14,6 +14,127 @@ const formatRupiah = (amount) =>
         maximumFractionDigits: 0,
     }).format(amount || 0);
 
+const getTodayWibDate = () => {
+    try {
+        return new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Jakarta",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+        }).format(new Date());
+    } catch {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    }
+};
+
+const shiftDateString = (dateStr, deltaDays) => {
+    if (!dateStr) return "";
+    const [y, m, d] = String(dateStr).split("-").map(Number);
+    const dt = new Date(Date.UTC(y, (m || 1) - 1, (d || 1) + deltaDays));
+    return dt.toISOString().slice(0, 10);
+};
+
+const diffDaysBetween = (startStr, endStr) => {
+    if (!startStr || !endStr) return 0;
+    const [sy, sm, sd] = String(startStr).split("-").map(Number);
+    const [ey, em, ed] = String(endStr).split("-").map(Number);
+    const s = Date.UTC(sy, (sm || 1) - 1, sd || 1);
+    const e = Date.UTC(ey, (em || 1) - 1, ed || 1);
+    return Math.round((e - s) / 86400000);
+};
+
+const formatOtsDateHeader = (dateStr, customDayLabel) => {
+    if (!dateStr) return { dayName: customDayLabel || "-", formattedDate: "" };
+    const [y, m, d] = String(dateStr).split("-").map(Number);
+    const dt = new Date(y, (m || 1) - 1, d || 1);
+    const dayNames = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+    const dayName = (customDayLabel || "").trim() || dayNames[dt.getDay()] || "";
+    const formattedDate = `${d} ${monthNames[(m || 1) - 1] || ""} ${y}`;
+    return { dayName, formattedDate };
+};
+
+const createEmptyOtsItemRow = () => ({ name: "", qty: 1, price: "" });
+
+const parseOtsItemsToRows = (itemsText) => {
+    const rawLines = String(itemsText || "").split(/\r?\n/);
+    const priceSuffixRegex = /\s*(?:-|–|—)\s*(?:rp\.?\s*)?(\d+(?:[.,]\d{3})*)(?:\s*(rb|ribu|k))?\s*$/i;
+    const qtySuffixRegex = /\s+x(\d+)\s*$/i;
+    const rows = [];
+    for (const raw of rawLines) {
+        const line = raw.trim();
+        if (!line) continue;
+
+        let nameAndQty = line;
+        let lineTotal = null;
+
+        const mPrice = line.match(priceSuffixRegex);
+        if (mPrice) {
+            const num = parseInt(mPrice[1].replace(/[.,]/g, ""), 10);
+            const unit = (mPrice[2] || "").toLowerCase();
+            const val = ["rb", "ribu", "k"].includes(unit) ? num * 1000 : num;
+            if (!Number.isNaN(val)) {
+                lineTotal = val;
+            }
+            nameAndQty = line.slice(0, mPrice.index).trim() || line;
+        }
+
+        let qty = 1;
+        let cleanName = nameAndQty;
+        const mQty = nameAndQty.match(qtySuffixRegex);
+        if (mQty) {
+            const parsedQty = parseInt(mQty[1], 10);
+            if (parsedQty > 0) {
+                qty = parsedQty;
+                cleanName = nameAndQty.slice(0, mQty.index).trim() || nameAndQty;
+            }
+        }
+
+        const unitPrice = lineTotal !== null ? String(Math.round(lineTotal / qty)) : "";
+        rows.push({
+            name: cleanName,
+            qty,
+            price: unitPrice,
+        });
+    }
+    return rows.length > 0 ? rows : [createEmptyOtsItemRow()];
+};
+
+const serializeOtsRows = (rows) => {
+    const cleaned = (rows || [])
+        .map((r) => ({
+            name: String(r?.name || "").trim(),
+            qty: Math.max(1, parseInt(r?.qty, 10) || 1),
+            price: String(r?.price || "").replace(/[^\d]/g, ""),
+        }))
+        .filter((r) => r.name);
+
+    const itemsText = cleaned
+        .map((r) => {
+            const label = r.qty > 1 ? `${r.name} x${r.qty}` : r.name;
+            if (r.price !== "") {
+                return `${label} - ${Number(r.price) * r.qty}`;
+            }
+            return label;
+        })
+        .join("\n");
+
+    let total = 0;
+    let hasPrice = false;
+    for (const r of cleaned) {
+        if (r.price !== "") {
+            total += Number(r.price) * r.qty;
+            hasPrice = true;
+        }
+    }
+
+    return {
+        itemsText,
+        amount: hasPrice && total > 0 ? total : null,
+    };
+};
+
 export default function AdminDashboardPage() {
     const router = useRouter();
     const fileInputRef = useRef(null);
@@ -55,6 +176,15 @@ export default function AdminDashboardPage() {
         window.scrollTo({ top: 0, behavior: "smooth" });
     };
 
+    const restoreScrollPosition = (targetY) => {
+        if (typeof window === "undefined" || targetY <= 0) return;
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                window.scrollTo({ top: targetY, behavior: "instant" });
+            });
+        });
+    };
+
     // Stock adjustments draft state (prodId -> temporary pending stock)
     const [stockEdits, setStockEdits] = useState({});
 
@@ -90,10 +220,16 @@ export default function AdminDashboardPage() {
     const [auditTotal, setAuditTotal] = useState(0);
     const [auditLoading, setAuditLoading] = useState(false);
     const [auditSearch, setAuditSearch] = useState("");
+    const [auditStartDate, setAuditStartDate] = useState("");
+    const [auditEndDate, setAuditEndDate] = useState("");
     const auditSearchRef = useRef(auditSearch);
+    const auditRangeRef = useRef({ startDate: "", endDate: "" });
     useEffect(() => {
         auditSearchRef.current = auditSearch;
     }, [auditSearch]);
+    useEffect(() => {
+        auditRangeRef.current = { startDate: auditStartDate, endDate: auditEndDate };
+    }, [auditStartDate, auditEndDate]);
 
     // User Management state
     const [userSubTab, setUserSubTab] = useState("admins"); // "admins" | "customers"
@@ -186,9 +322,70 @@ export default function AdminDashboardPage() {
     const [promoCustomerSearch, setPromoCustomerSearch] = useState("");
     const [savingPromo, setSavingPromo] = useState(false);
 
+    // Catatan OTS (On-The-Spot) State
+    const [otsNotes, setOtsNotes] = useState([]);
+    const [otsLoading, setOtsLoading] = useState(false);
+    const [otsSearch, setOtsSearch] = useState("");
+    const [otsStatusFilter, setOtsStatusFilter] = useState("pending"); // "all" | "pending" | "unpaid" | "done"
+    const [todayWibDate, setTodayWibDate] = useState("");
+    const [otsDate, setOtsDate] = useState("");
+    const [otsCustomerName, setOtsCustomerName] = useState("");
+    const [otsItemRows, setOtsItemRows] = useState([createEmptyOtsItemRow()]);
+    const [savingOtsNote, setSavingOtsNote] = useState(false);
+    const [showOtsAddForm, setShowOtsAddForm] = useState(false);
+    const [openOtsMenuId, setOpenOtsMenuId] = useState(null);
+    const [openOtsRecapDates, setOpenOtsRecapDates] = useState({});
+    const [otsRecapPendingOnly, setOtsRecapPendingOnly] = useState(false);
+
+    // Master Menu OTS State
+    const [otsMenus, setOtsMenus] = useState([]);
+    const [otsMenusLoading, setOtsMenusLoading] = useState(false);
+    const [showOtsMenuManager, setShowOtsMenuManager] = useState(false);
+    const [newOtsMenuName, setNewOtsMenuName] = useState("");
+    const [newOtsMenuPrice, setNewOtsMenuPrice] = useState("");
+    const [savingOtsMenu, setSavingOtsMenu] = useState(false);
+    const [editingOtsMenuId, setEditingOtsMenuId] = useState(null);
+    const [editOtsMenuName, setEditOtsMenuName] = useState("");
+    const [editOtsMenuPrice, setEditOtsMenuPrice] = useState("");
+    const [savingEditOtsMenu, setSavingEditOtsMenu] = useState(false);
+
+    // Edit OTS Note Modal State
+    const [showOtsEditModal, setShowOtsEditModal] = useState(false);
+    const [editingOtsNote, setEditingOtsNote] = useState(null);
+    const [editOtsDate, setEditOtsDate] = useState("");
+    const [editOtsCustomerName, setEditOtsCustomerName] = useState("");
+    const [editOtsItemRows, setEditOtsItemRows] = useState([createEmptyOtsItemRow()]);
+    const [editOtsIsPaid, setEditOtsIsPaid] = useState(false);
+    const [editOtsIsDone, setEditOtsIsDone] = useState(false);
+    const [savingEditOts, setSavingEditOts] = useState(false);
+
     const showToast = (msg, type = "success") => {
         modernToast(msg, type);
     };
+
+    const fetchOtsNotes = useCallback(async ({ silent = false } = {}) => {
+        if (!silent) setOtsLoading(true);
+        try {
+            const data = await apiRequest("/ots-notes", { useAdminToken: true });
+            setOtsNotes(Array.isArray(data) ? data : []);
+        } catch (err) {
+            console.error("Gagal memuat catatan OTS:", err);
+        } finally {
+            if (!silent) setOtsLoading(false);
+        }
+    }, []);
+
+    const fetchOtsMenus = useCallback(async ({ silent = false } = {}) => {
+        if (!silent) setOtsMenusLoading(true);
+        try {
+            const data = await apiRequest("/ots-notes/menus", { useAdminToken: true });
+            setOtsMenus(Array.isArray(data) ? data : []);
+        } catch (err) {
+            console.error("Gagal memuat daftar menu OTS:", err);
+        } finally {
+            if (!silent) setOtsMenusLoading(false);
+        }
+    }, []);
 
     const fetchOrders = useCallback(async () => {
         setOrdersLoading(true);
@@ -214,13 +411,26 @@ export default function AdminDashboardPage() {
         }
     }, []);
 
-    const fetchAuditTrails = useCallback(async (searchQuery = "") => {
+    const fetchAuditTrails = useCallback(async (searchQuery, startDateArg, endDateArg) => {
         setAuditLoading(true);
         try {
-            const query = searchQuery.trim()
-                ? `&search=${encodeURIComponent(searchQuery.trim())}`
-                : "";
-            const res = await apiRequest(`/admins/audit-trails?limit=50${query}`, { useAdminToken: true });
+            const effectiveSearch = searchQuery !== undefined ? searchQuery : auditSearchRef.current;
+            const effectiveStart = startDateArg !== undefined ? startDateArg : auditRangeRef.current.startDate;
+            const effectiveEnd = endDateArg !== undefined ? endDateArg : auditRangeRef.current.endDate;
+
+            const params = new URLSearchParams();
+            params.set("limit", "100");
+            if (effectiveSearch && effectiveSearch.trim()) {
+                params.set("search", effectiveSearch.trim());
+            }
+            if (effectiveStart) {
+                params.set("start_date", effectiveStart);
+            }
+            if (effectiveEnd) {
+                params.set("end_date", effectiveEnd);
+            }
+
+            const res = await apiRequest(`/admins/audit-trails?${params.toString()}`, { useAdminToken: true });
             setAuditTrails(res.audit_trails || []);
             setAuditTotal(res.total || 0);
         } catch (err) {
@@ -300,12 +510,24 @@ export default function AdminDashboardPage() {
             .catch(() => { });
 
         const timer = setTimeout(() => {
+            const today = getTodayWibDate();
+            const defaultAuditStart = shiftDateString(today, -6);
+            setTodayWibDate(today);
+            setOtsDate((prev) => prev || today);
+            setAuditStartDate((prev) => prev || defaultAuditStart);
+            setAuditEndDate((prev) => prev || today);
+            auditRangeRef.current = {
+                startDate: auditRangeRef.current.startDate || defaultAuditStart,
+                endDate: auditRangeRef.current.endDate || today,
+            };
             setLoading(false);
             fetchOrders();
             fetchProducts();
             fetchCategories();
             fetchPromos();
-            fetchAuditTrails();
+            fetchOtsNotes();
+            fetchOtsMenus();
+            fetchAuditTrails(auditSearchRef.current, auditRangeRef.current.startDate, auditRangeRef.current.endDate);
             if (adminUser?.role !== "staff") {
                 fetchAdmins();
                 fetchCustomers();
@@ -313,7 +535,7 @@ export default function AdminDashboardPage() {
         }, 0);
 
         return () => clearTimeout(timer);
-    }, [router, fetchOrders, fetchProducts, fetchCategories, fetchPromos, fetchAuditTrails, fetchAdmins, fetchCustomers, adminUser?.role]);
+    }, [router, fetchOrders, fetchProducts, fetchCategories, fetchPromos, fetchOtsNotes, fetchOtsMenus, fetchAuditTrails, fetchAdmins, fetchCustomers, adminUser?.role]);
 
     // Jika akun adalah staff, pastikan tidak bisa berada di tab User Management
     useEffect(() => {
@@ -335,6 +557,8 @@ export default function AdminDashboardPage() {
                     fetchProducts({ silent: true });
                     fetchCategories();
                     fetchPromos();
+                    fetchOtsNotes({ silent: true });
+                    fetchOtsMenus({ silent: true });
                     if (!auditSearchRef.current) {
                         fetchAuditTrails();
                     }
@@ -351,7 +575,7 @@ export default function AdminDashboardPage() {
         }, 1000);
 
         return () => clearInterval(countdownInterval);
-    }, [autoRefresh, fetchOrders, fetchProducts, fetchCategories, fetchPromos, fetchAuditTrails, fetchAdmins, fetchCustomers, adminUser?.role]);
+    }, [autoRefresh, fetchOrders, fetchProducts, fetchCategories, fetchPromos, fetchOtsNotes, fetchOtsMenus, fetchAuditTrails, fetchAdmins, fetchCustomers, adminUser?.role]);
 
     // Sync dark background color to html/body for seamless mobile Safari rendering
     useEffect(() => {
@@ -444,12 +668,12 @@ export default function AdminDashboardPage() {
                 prev.map((o) =>
                     o.id === manualTrackingModalOrder.id
                         ? {
-                              ...o,
-                              tracking_number: res.tracking_number,
-                              courier: res.courier,
-                              tracking_url: res.tracking_url,
-                              status: res.order_status || o.status,
-                          }
+                            ...o,
+                            tracking_number: res.tracking_number,
+                            courier: res.courier,
+                            tracking_url: res.tracking_url,
+                            status: res.order_status || o.status,
+                        }
                         : o
                 )
             );
@@ -668,12 +892,7 @@ export default function AdminDashboardPage() {
 
     function closeProductModal() {
         setShowProductModal(false);
-        const targetY = savedScrollYRef.current;
-        if (typeof window !== "undefined" && targetY > 0) {
-            requestAnimationFrame(() => {
-                window.scrollTo({ top: targetY, behavior: "instant" });
-            });
-        }
+        restoreScrollPosition(savedScrollYRef.current);
     }
 
     async function handleSaveProduct(e) {
@@ -1254,6 +1473,568 @@ export default function AdminDashboardPage() {
         }
     }
 
+    // ── Catatan OTS (On-The-Spot) Handlers ──────────────────────────────────
+    async function handleCreateOtsNote(e) {
+        e.preventDefault();
+        if (!otsDate) {
+            showToast("Pilih tanggal catatan terlebih dahulu.", "warning");
+            return;
+        }
+
+        const { itemsText, amount } = serializeOtsRows(otsItemRows);
+        if (!otsCustomerName.trim() || !itemsText) {
+            showToast("Nama pembeli dan minimal 1 menu wajib diisi.", "warning");
+            return;
+        }
+
+        setSavingOtsNote(true);
+        try {
+            await apiRequest("/ots-notes", {
+                method: "POST",
+                useAdminToken: true,
+                body: JSON.stringify({
+                    note_date: otsDate,
+                    day_label: null,
+                    customer_name: otsCustomerName.trim(),
+                    items_text: itemsText,
+                    amount,
+                    is_paid: false,
+                    is_done: false,
+                }),
+            });
+            showToast(`Catatan '${otsCustomerName.trim()}' berhasil ditambahkan! 📝`);
+            setOtsCustomerName("");
+            setOtsItemRows([createEmptyOtsItemRow()]);
+            await fetchOtsNotes({ silent: true });
+            fetchAuditTrails();
+        } catch (err) {
+            showToast(err.message || "Gagal menyimpan catatan OTS.", "error");
+        } finally {
+            setSavingOtsNote(false);
+        }
+    }
+
+    const updateOtsRowField = (setter, index, field, value) => {
+        setter((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
+    };
+
+    const addOtsRow = (setter) => {
+        setter((prev) => [...prev, createEmptyOtsItemRow()]);
+    };
+
+    const removeOtsRow = async (rows, setter, index) => {
+        const targetRow = rows[index];
+        const menuLabel = targetRow?.name?.trim()
+            ? `'${targetRow.name.trim()}'`
+            : `baris ke-${index + 1}`;
+        const confirmed = await showConfirm(
+            `Yakin mau menghapus menu ${menuLabel}?`,
+            {
+                title: "Hapus Menu",
+                type: "danger",
+                confirmText: "Ya, Hapus",
+            }
+        );
+        if (!confirmed) return;
+
+        setter((prev) => {
+            const next = prev.filter((_, i) => i !== index);
+            return next.length > 0 ? next : [createEmptyOtsItemRow()];
+        });
+    };
+
+    const handlePickPresetOtsMenu = (setter, menuId) => {
+        const selected = otsMenus.find((m) => String(m.id) === String(menuId));
+        if (!selected) return;
+        const nextPrice = selected.price > 0 ? String(selected.price) : "";
+        const nextItem = {
+            name: selected.name,
+            qty: 1,
+            price: nextPrice,
+        };
+        setter((prev) => {
+            const existingIdx = prev.findIndex(
+                (r) =>
+                    String(r.name || "").trim().toLowerCase() === selected.name.trim().toLowerCase() &&
+                    String(r.price || "") === nextPrice
+            );
+            if (existingIdx !== -1) {
+                return prev.map((r, i) =>
+                    i === existingIdx ? { ...r, qty: Math.max(1, parseInt(r.qty, 10) || 1) + 1 } : r
+                );
+            }
+            const emptyIndex = prev.findIndex((r) => !String(r.name || "").trim() && !String(r.price || "").trim());
+            if (emptyIndex !== -1) {
+                return prev.map((r, i) => (i === emptyIndex ? nextItem : r));
+            }
+            return [...prev, nextItem];
+        });
+    };
+
+    const adjustOtsRowQty = (setter, index, delta) => {
+        setter((prev) =>
+            prev.map((row, i) => {
+                if (i !== index) return row;
+                const currentQty = Math.max(1, parseInt(row.qty, 10) || 1);
+                return { ...row, qty: Math.max(1, currentQty + delta) };
+            })
+        );
+    };
+
+    async function handleCreateOtsMenu(e) {
+        e.preventDefault();
+        if (!newOtsMenuName.trim()) {
+            showToast("Nama menu OTS wajib diisi.", "warning");
+            return;
+        }
+        setSavingOtsMenu(true);
+        try {
+            await apiRequest("/ots-notes/menus", {
+                method: "POST",
+                useAdminToken: true,
+                body: JSON.stringify({
+                    name: newOtsMenuName.trim(),
+                    price: Math.max(0, Number(newOtsMenuPrice) || 0),
+                    is_active: true,
+                }),
+            });
+            showToast(`Menu OTS '${newOtsMenuName.trim()}' ditambahkan! 🍽️`);
+            setNewOtsMenuName("");
+            setNewOtsMenuPrice("");
+            await fetchOtsMenus({ silent: true });
+            fetchAuditTrails();
+        } catch (err) {
+            showToast(err.message || "Gagal menambah menu OTS.", "error");
+        } finally {
+            setSavingOtsMenu(false);
+        }
+    }
+
+    function openInlineEditOtsMenu(menu) {
+        setEditingOtsMenuId(menu.id);
+        setEditOtsMenuName(menu.name || "");
+        setEditOtsMenuPrice(menu.price !== null && menu.price !== undefined ? String(menu.price) : "");
+    }
+
+    async function handleSaveEditOtsMenu(menuId) {
+        if (!editOtsMenuName.trim()) {
+            showToast("Nama menu tidak boleh kosong.", "warning");
+            return;
+        }
+        setSavingEditOtsMenu(true);
+        try {
+            await apiRequest(`/ots-notes/menus/${menuId}`, {
+                method: "PUT",
+                useAdminToken: true,
+                body: JSON.stringify({
+                    name: editOtsMenuName.trim(),
+                    price: Math.max(0, Number(editOtsMenuPrice) || 0),
+                }),
+            });
+            showToast("Menu OTS berhasil diperbarui! ✨");
+            setEditingOtsMenuId(null);
+            await fetchOtsMenus({ silent: true });
+            fetchAuditTrails();
+        } catch (err) {
+            showToast(err.message || "Gagal memperbarui menu OTS.", "error");
+        } finally {
+            setSavingEditOtsMenu(false);
+        }
+    }
+
+    async function handleDeleteOtsMenu(menu) {
+        const confirmed = await showConfirm(
+            `Hapus menu OTS '${menu.name}' dari daftar pilihan?`,
+            {
+                title: "Hapus Menu OTS",
+                type: "danger",
+                confirmText: "Ya, Hapus",
+            }
+        );
+        if (!confirmed) return;
+
+        try {
+            await apiRequest(`/ots-notes/menus/${menu.id}`, {
+                method: "DELETE",
+                useAdminToken: true,
+            });
+            showToast(`Menu OTS '${menu.name}' berhasil dihapus.`);
+            if (editingOtsMenuId === menu.id) setEditingOtsMenuId(null);
+            await fetchOtsMenus({ silent: true });
+            fetchAuditTrails();
+        } catch (err) {
+            showToast(err.message || "Gagal menghapus menu OTS.", "error");
+        }
+    }
+
+    const renderOtsItemRowsEditor = (rows, setter) => {
+        const { amount: calculatedTotal } = serializeOtsRows(rows);
+        return (
+            <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                    <label className="block text-[11px] font-semibold text-[#D1C7BD]">
+                        Pesanan Menu & Harga <span className="text-red-400">*</span>
+                    </label>
+                    {calculatedTotal !== null && (
+                        <span className="rounded border border-emerald-500/30 bg-emerald-950/50 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+                            Total: {formatRupiah(calculatedTotal)}
+                        </span>
+                    )}
+                </div>
+
+                {/* Preset Menu OTS Selector */}
+                <div className="flex items-center gap-2">
+                    {otsMenus.length > 0 ? (
+                        <select
+                            value=""
+                            onChange={(e) => {
+                                if (e.target.value) {
+                                    handlePickPresetOtsMenu(setter, e.target.value);
+                                }
+                            }}
+                            className="min-w-0 flex-1 rounded-xl border border-[#524245] bg-[#191415] px-3 py-2 text-xs text-[#E8A598] font-medium outline-none focus:border-[#E8A598]"
+                        >
+                            <option value="">-- Pilih Cepat dari Menu OTS ({otsMenus.length}) --</option>
+                            {otsMenus.map((m) => (
+                                <option key={m.id} value={m.id}>
+                                    {m.name} {m.price > 0 ? `— ${formatRupiah(m.price)}` : ""}
+                                </option>
+                            ))}
+                        </select>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={() => setShowOtsMenuManager(true)}
+                            className="flex-1 rounded-xl border border-dashed border-[#524245] bg-[#191415]/70 px-3 py-2 text-left text-[11px] font-medium text-[#A89F97] hover:border-[#E8A598] hover:text-[#E8A598] transition"
+                        >
+                            + Simpan daftar menu OTS di sini biar nanti tinggal pilih...
+                        </button>
+                    )}
+                </div>
+
+                <div className="space-y-2">
+                    {rows.map((row, index) => {
+                        const qty = Math.max(1, parseInt(row.qty, 10) || 1);
+                        return (
+                            <div key={index} className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+                                <input
+                                    type="text"
+                                    required={index === 0}
+                                    value={row.name}
+                                    onChange={(e) => updateOtsRowField(setter, index, "name", e.target.value)}
+                                    placeholder={index === 0 ? "cth: Nasi Putih" : "cth: Sei Sapi"}
+                                    className="w-full sm:w-auto sm:flex-1 min-w-0 rounded-xl border border-[#3E3234] bg-[#191415] px-3 py-2 text-xs text-white placeholder-[#786D6B] placeholder:text-[10px] outline-none focus:border-[#E8A598]"
+                                />
+                                <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+                                    {/* Qty Stepper */}
+                                    <div className="inline-flex h-8 shrink-0 items-center rounded-xl border border-[#3E3234] bg-[#191415] overflow-hidden">
+                                        <button
+                                            type="button"
+                                            disabled={qty <= 1}
+                                            onClick={() => adjustOtsRowQty(setter, index, -1)}
+                                            className="flex h-full w-7 items-center justify-center text-[#D1C7BD] hover:bg-[#2E2527] disabled:opacity-30 transition"
+                                            title="Kurangi Qty"
+                                        >
+                                            <span className="text-xs font-bold leading-none">−</span>
+                                        </button>
+                                        <span className="w-6 text-center text-[11px] font-bold text-white select-none">
+                                            {qty}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => adjustOtsRowQty(setter, index, 1)}
+                                            className="flex h-full w-7 items-center justify-center text-[#E8A598] hover:bg-[#2E2527] transition"
+                                            title="Tambah Qty"
+                                        >
+                                            <span className="text-xs font-bold leading-none">+</span>
+                                        </button>
+                                    </div>
+
+                                    {/* Unit Price */}
+                                    <div className="relative flex-1 sm:w-32 shrink-0">
+                                        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-[#786D6B]">
+                                            Rp
+                                        </span>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={row.price}
+                                            onChange={(e) => updateOtsRowField(setter, index, "price", e.target.value)}
+                                            placeholder={index === 0 ? "5000" : "10000"}
+                                            className="w-full rounded-xl border border-[#3E3234] bg-[#191415] pl-8 pr-2.5 py-2 text-xs text-white placeholder-[#786D6B] placeholder:text-[10px] outline-none focus:border-[#E8A598]"
+                                        />
+                                    </div>
+
+                                    {rows.length > 1 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => removeOtsRow(rows, setter, index)}
+                                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-red-500/30 bg-[#191415] text-xs font-bold text-red-400 hover:bg-red-950/40"
+                                            title="Hapus baris menu"
+                                        >
+                                            <span className="text-xs font-bold leading-none">✕</span>
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+
+                <button
+                    type="button"
+                    onClick={() => addOtsRow(setter)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-dashed border-[#4D3D40] bg-[#191415]/60 px-3 py-1.5 text-[11px] font-semibold text-[#E8A598] transition hover:border-[#E8A598] hover:bg-[#2E2527]"
+                >
+                    + Tambah Manual
+                </button>
+            </div>
+        );
+    };
+
+    function openEditOtsModal(note) {
+        if (typeof window !== "undefined") {
+            savedScrollYRef.current = window.scrollY;
+        }
+        setEditingOtsNote(note);
+        setEditOtsDate(note.note_date || todayWibDate);
+        setEditOtsCustomerName(note.customer_name || "");
+        setEditOtsItemRows(parseOtsItemsToRows(note.items_text));
+        setEditOtsIsPaid(Boolean(note.is_paid));
+        setEditOtsIsDone(Boolean(note.is_done));
+        setShowOtsEditModal(true);
+    }
+
+    function closeOtsEditModal() {
+        setShowOtsEditModal(false);
+        restoreScrollPosition(savedScrollYRef.current);
+    }
+
+    async function handleSaveEditOts(e) {
+        e.preventDefault();
+        if (!editingOtsNote) return;
+        const { itemsText, amount } = serializeOtsRows(editOtsItemRows);
+        if (!editOtsCustomerName.trim() || !itemsText) {
+            showToast("Nama pembeli dan minimal 1 menu wajib diisi.", "warning");
+            return;
+        }
+
+        setSavingEditOts(true);
+        try {
+            await apiRequest(`/ots-notes/${editingOtsNote.id}`, {
+                method: "PUT",
+                useAdminToken: true,
+                body: JSON.stringify({
+                    note_date: editOtsDate,
+                    day_label: null,
+                    customer_name: editOtsCustomerName.trim(),
+                    items_text: itemsText,
+                    amount,
+                    is_paid: editOtsIsPaid,
+                    is_done: editOtsIsDone,
+                }),
+            });
+            showToast(`Catatan '${editOtsCustomerName.trim()}' diperbarui! ✨`);
+            closeOtsEditModal();
+            await fetchOtsNotes({ silent: true });
+            restoreScrollPosition(savedScrollYRef.current);
+            fetchAuditTrails();
+        } catch (err) {
+            showToast(err.message || "Gagal memperbarui catatan OTS.", "error");
+        } finally {
+            setSavingEditOts(false);
+        }
+    }
+
+    async function handleToggleOtsField(note, field) {
+        const targetY = typeof window !== "undefined" ? window.scrollY : 0;
+        if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) {
+            document.activeElement.blur();
+        }
+        const nextVal = !note[field];
+        // Optimistic UI update
+        setOtsNotes((prev) =>
+            prev.map((n) => (n.id === note.id ? { ...n, [field]: nextVal } : n))
+        );
+        restoreScrollPosition(targetY);
+        try {
+            await apiRequest(`/ots-notes/${note.id}`, {
+                method: "PUT",
+                useAdminToken: true,
+                body: JSON.stringify({ [field]: nextVal }),
+            });
+            await fetchOtsNotes({ silent: true });
+            restoreScrollPosition(targetY);
+        } catch (err) {
+            showToast(err.message || "Gagal memperbarui status catatan.", "error");
+            await fetchOtsNotes({ silent: true });
+            restoreScrollPosition(targetY);
+        }
+    }
+
+    function handleSelectOtsFilter(filterId) {
+        const targetY = typeof window !== "undefined" ? window.scrollY : 0;
+        if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) {
+            document.activeElement.blur();
+        }
+        setOtsStatusFilter(filterId);
+        restoreScrollPosition(targetY);
+    }
+
+    useEffect(() => {
+        if (openOtsMenuId === null) return;
+        const handleOutsideClick = (e) => {
+            if (typeof e.target?.closest === "function" && !e.target.closest("[data-ots-menu-container]")) {
+                setOpenOtsMenuId(null);
+            }
+        };
+        document.addEventListener("mousedown", handleOutsideClick);
+        document.addEventListener("touchstart", handleOutsideClick);
+        return () => {
+            document.removeEventListener("mousedown", handleOutsideClick);
+            document.removeEventListener("touchstart", handleOutsideClick);
+        };
+    }, [openOtsMenuId]);
+
+    const buildOtsReceiptOrder = (note) => {
+        const parsedRows = parseOtsItemsToRows(note.items_text);
+        const items = parsedRows
+            .filter((r) => r.name && r.name.trim())
+            .map((r) => ({
+                product_name: r.name.trim(),
+                quantity: Math.max(1, parseInt(r.qty, 10) || 1),
+                price: r.price !== "" ? Number(r.price) : 0,
+            }));
+        const total =
+            note.amount !== null && note.amount !== undefined
+                ? Number(note.amount)
+                : items.reduce((sum, it) => sum + (it.price || 0) * (it.quantity || 1), 0);
+
+        return {
+            id: `OTS-${note.id}`,
+            order_code: `OTS-${note.id}`,
+            is_ots: true,
+            customer_name: note.customer_name || "Pelanggan OTS",
+            created_at: note.created_at || (note.note_date ? `${note.note_date}T00:00:00` : undefined),
+            fulfillment_method: "pickup",
+            status: note.is_paid ? "paid" : "pending",
+            items,
+            shipping_cost: 0,
+            packaging_fee: 0,
+            discount_amount: 0,
+            grand_total: total,
+            total_amount: total,
+        };
+    };
+
+    async function handleDeleteOtsNote(note) {
+        const targetY = typeof window !== "undefined" ? window.scrollY : 0;
+        const confirmed = await showConfirm(
+            `Hapus catatan OTS '${note.customer_name} : ${note.items_text}'?`,
+            {
+                title: "Hapus Catatan OTS",
+                type: "danger",
+                confirmText: "Ya, Hapus",
+            }
+        );
+        if (!confirmed) {
+            restoreScrollPosition(targetY);
+            return;
+        }
+
+        try {
+            await apiRequest(`/ots-notes/${note.id}`, {
+                method: "DELETE",
+                useAdminToken: true,
+            });
+            showToast(`Catatan '${note.customer_name}' berhasil dihapus.`);
+            await fetchOtsNotes({ silent: true });
+            restoreScrollPosition(targetY);
+            fetchAuditTrails();
+        } catch (err) {
+            showToast(err.message || "Gagal menghapus catatan OTS.", "error");
+        }
+    }
+
+    function handleCopyOtsDay(dateStr, dayName, items) {
+        const { dayName: resolvedDay, formattedDate } = formatOtsDateHeader(dateStr, dayName);
+        const header = formattedDate ? `${resolvedDay} (${formattedDate})` : resolvedDay;
+        const lines = items.map((item) => {
+            const priceSuffix = item.amount ? ` (${formatRupiah(item.amount)})` : "";
+            const isMultiLine = String(item.items_text || "").includes("\n");
+            if (isMultiLine) {
+                return `${item.customer_name} :\n${item.items_text}${priceSuffix ? `\nTotal:${priceSuffix}` : ""}`;
+            }
+            return `${item.customer_name} : ${item.items_text}${priceSuffix}`;
+        });
+        const fullText = `${header}\n${lines.join("\n")}`;
+        if (typeof navigator !== "undefined" && navigator.clipboard) {
+            navigator.clipboard.writeText(fullText);
+            showToast(`Catatan ${resolvedDay} berhasil disalin ke clipboard! 📋`);
+        }
+    }
+
+    function buildOtsDayRecap(notes, pendingOnly = false) {
+        const masterMenuNameMap = new Map();
+        (otsMenus || []).forEach((menu) => {
+            const normalized = String(menu?.name || "").trim().replace(/\s+/g, " ").toLowerCase();
+            if (normalized) {
+                masterMenuNameMap.set(normalized, String(menu.name).trim());
+            }
+        });
+
+        const relevantNotes = (notes || []).filter((n) => (pendingOnly ? !n.is_done : true));
+        const itemMap = new Map();
+
+        relevantNotes.forEach((note) => {
+            const rows = parseOtsItemsToRows(note.items_text);
+            rows.forEach((row) => {
+                const rawName = String(row?.name || "").trim().replace(/\s+/g, " ");
+                if (!rawName) return;
+                const key = rawName.toLowerCase();
+                const qty = Math.max(1, parseInt(row?.qty, 10) || 1);
+
+                if (!itemMap.has(key)) {
+                    itemMap.set(key, {
+                        key,
+                        name: masterMenuNameMap.get(key) || rawName,
+                        totalQty: 0,
+                        pendingQty: 0,
+                    });
+                }
+                const entry = itemMap.get(key);
+                entry.totalQty += qty;
+                if (!note.is_done) {
+                    entry.pendingQty += qty;
+                }
+            });
+        });
+
+        const items = Array.from(itemMap.values()).sort((a, b) => {
+            if (b.totalQty !== a.totalQty) return b.totalQty - a.totalQty;
+            return a.name.localeCompare(b.name, "id");
+        });
+
+        const totalPortions = items.reduce((sum, item) => sum + item.totalQty, 0);
+        return {
+            items,
+            totalPortions,
+            totalOrders: relevantNotes.length,
+        };
+    }
+
+    function handleCopyOtsRecap(dateStr, dayName, recap, pendingOnly) {
+        const { dayName: resolvedDay, formattedDate } = formatOtsDateHeader(dateStr, dayName);
+        const header = formattedDate ? `Rekap Menu - ${resolvedDay} (${formattedDate})` : `Rekap Menu - ${resolvedDay}`;
+        const scopeLabel = pendingOnly ? " [Belum Selesai]" : "";
+        const lines = (recap?.items || []).map((item) => `- ${item.name} = ${item.totalQty}`);
+        const fullText = `${header}${scopeLabel}\n${lines.join("\n")}\nTotal: ${recap?.totalPortions || 0} item`;
+        if (typeof navigator !== "undefined" && navigator.clipboard) {
+            navigator.clipboard.writeText(fullText);
+            showToast(`Rekap Menu ${resolvedDay} berhasil disalin! 📋`);
+        }
+    }
+
     if (loading) {
         return (
             <main className="flex min-h-screen items-center justify-center bg-[#191415] text-white">
@@ -1287,6 +2068,37 @@ export default function AdminDashboardPage() {
             prod.description?.toLowerCase().includes(q)
         );
     });
+
+    const otsPendingCount = otsNotes.filter((n) => !n.is_done).length;
+    const otsUnpaidCount = otsNotes.filter((n) => !n.is_paid).length;
+    const otsDoneCount = otsNotes.filter((n) => n.is_done && n.is_paid).length;
+
+    const filteredOtsNotes = otsNotes.filter((note) => {
+        if (otsStatusFilter === "pending" && note.is_done) return false;
+        if (otsStatusFilter === "unpaid" && note.is_paid) return false;
+        if (otsStatusFilter === "done" && (!note.is_done || !note.is_paid)) return false;
+
+        const q = otsSearch.trim().toLowerCase();
+        if (!q) return true;
+        const { dayName, formattedDate } = formatOtsDateHeader(note.note_date, note.day_label);
+        return (
+            note.customer_name?.toLowerCase().includes(q) ||
+            note.items_text?.toLowerCase().includes(q) ||
+            dayName.toLowerCase().includes(q) ||
+            formattedDate.toLowerCase().includes(q)
+        );
+    });
+
+    const groupedOtsMap = new Map();
+    filteredOtsNotes.forEach((note) => {
+        const key = note.note_date || "tanpa-tanggal";
+        if (!groupedOtsMap.has(key)) {
+            groupedOtsMap.set(key, []);
+        }
+        groupedOtsMap.get(key).push(note);
+    });
+    const groupedOtsDays = Array.from(groupedOtsMap.entries());
+    const pendingOtsCount = otsNotes.filter((n) => !n.is_done).length;
 
     const pendingCookCount = orders.filter((o) => o.status === "paid" || o.status === "processing").length;
     const totalRevenue = orders
@@ -1344,7 +2156,7 @@ export default function AdminDashboardPage() {
                                 setAutoRefresh(nextState);
                                 try {
                                     localStorage.setItem("ava_eats_admin_autorefresh", String(nextState));
-                                } catch {}
+                                } catch { }
                                 if (nextState) {
                                     setRefreshCounter(10);
                                     showToast("Auto-refresh tiap 10 detik diaktifkan! ⏱️");
@@ -1353,11 +2165,10 @@ export default function AdminDashboardPage() {
                                 }
                             }}
                             title={autoRefresh ? "Auto-refresh aktif setiap 10 detik. Klik untuk mematikan." : "Auto-refresh nonaktif. Klik untuk mengaktifkan."}
-                            className={`inline-flex items-center gap-1 sm:gap-1.5 rounded-xl border px-2 sm:px-2.5 py-1.5 text-xs font-semibold transition shrink-0 ${
-                                autoRefresh
-                                    ? "border-emerald-500/40 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/50"
-                                    : "border-[#3E3234] bg-[#2A2123] text-[#A89F97] hover:bg-[#342A2C] hover:text-white"
-                            }`}
+                            className={`inline-flex items-center gap-1 sm:gap-1.5 rounded-xl border px-2 sm:px-2.5 py-1.5 text-xs font-semibold transition shrink-0 ${autoRefresh
+                                ? "border-emerald-500/40 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/50"
+                                : "border-[#3E3234] bg-[#2A2123] text-[#A89F97] hover:bg-[#342A2C] hover:text-white"
+                                }`}
                         >
                             {autoRefresh ? (
                                 <>
@@ -1433,61 +2244,63 @@ export default function AdminDashboardPage() {
                 )}
 
                 {/* Metric Summary Cards */}
-                <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-5 mb-4 sm:mb-6">
-                    <div className="rounded-2xl border border-[#342A2C] bg-[#221B1D] p-3.5 sm:p-4">
-                        <span className="text-[10px] sm:text-[11px] font-semibold text-[#A89F97] uppercase tracking-wider">
-                            Total Omset
-                        </span>
-                        <p className="mt-1 text-base sm:text-xl font-bold text-white truncate">
-                            Rp {totalRevenue.toLocaleString("id-ID")}
-                        </p>
-                        <span className="text-[9px] sm:text-[10px] text-emerald-400">Order Berhasil</span>
-                    </div>
+                {activeTab !== "ots" && (
+                    <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-5 mb-4 sm:mb-6">
+                        <div className="rounded-2xl border border-[#342A2C] bg-[#221B1D] p-3.5 sm:p-4">
+                            <span className="text-[10px] sm:text-[11px] font-semibold text-[#A89F97] uppercase tracking-wider">
+                                Total Omset
+                            </span>
+                            <p className="mt-1 text-base sm:text-xl font-bold text-white truncate">
+                                Rp {totalRevenue.toLocaleString("id-ID")}
+                            </p>
+                            <span className="text-[9px] sm:text-[10px] text-emerald-400">Order Berhasil</span>
+                        </div>
 
-                    <div className="rounded-2xl border border-[#342A2C] bg-[#221B1D] p-3.5 sm:p-4">
-                        <span className="text-[10px] sm:text-[11px] font-semibold text-[#A89F97] uppercase tracking-wider">
-                            Antrean Siap / Kemas
-                        </span>
-                        <p className="mt-1 text-base sm:text-xl font-bold text-amber-400">
-                            {pendingCookCount} Order
-                        </p>
-                        <span className="text-[9px] sm:text-[10px] text-[#A89F97]">Paid & Processing</span>
-                    </div>
+                        <div className="rounded-2xl border border-[#342A2C] bg-[#221B1D] p-3.5 sm:p-4">
+                            <span className="text-[10px] sm:text-[11px] font-semibold text-[#A89F97] uppercase tracking-wider">
+                                Antrean Siap / Kemas
+                            </span>
+                            <p className="mt-1 text-base sm:text-xl font-bold text-amber-400">
+                                {pendingCookCount} Order
+                            </p>
+                            <span className="text-[9px] sm:text-[10px] text-[#A89F97]">Paid & Processing</span>
+                        </div>
 
-                    <div className={`rounded-2xl border p-3.5 sm:p-4 transition ${pendingRefundCount > 0
-                        ? "border-amber-500/50 bg-amber-950/20 shadow-sm shadow-amber-950/40"
-                        : "border-[#342A2C] bg-[#221B1D]"
-                        }`}>
-                        <span className="text-[10px] sm:text-[11px] font-semibold text-[#A89F97] uppercase tracking-wider">
-                            Perlu Refund
-                        </span>
-                        <p className={`mt-1 text-base sm:text-xl font-bold ${pendingRefundCount > 0 ? "text-amber-400" : "text-white"
+                        <div className={`rounded-2xl border p-3.5 sm:p-4 transition ${pendingRefundCount > 0
+                            ? "border-amber-500/50 bg-amber-950/20 shadow-sm shadow-amber-950/40"
+                            : "border-[#342A2C] bg-[#221B1D]"
                             }`}>
-                            {pendingRefundCount} Order
-                        </p>
-                        <span className="text-[9px] sm:text-[10px] text-[#A89F97]">Dana Batal</span>
-                    </div>
+                            <span className="text-[10px] sm:text-[11px] font-semibold text-[#A89F97] uppercase tracking-wider">
+                                Perlu Refund
+                            </span>
+                            <p className={`mt-1 text-base sm:text-xl font-bold ${pendingRefundCount > 0 ? "text-amber-400" : "text-white"
+                                }`}>
+                                {pendingRefundCount} Order
+                            </p>
+                            <span className="text-[9px] sm:text-[10px] text-[#A89F97]">Dana Batal</span>
+                        </div>
 
-                    <div className="rounded-2xl border border-[#342A2C] bg-[#221B1D] p-3.5 sm:p-4">
-                        <span className="text-[10px] sm:text-[11px] font-semibold text-[#A89F97] uppercase tracking-wider">
-                            Menu Aktif
-                        </span>
-                        <p className="mt-1 text-base sm:text-xl font-bold text-white">
-                            {products.filter((p) => p.is_available).length} / {products.length}
-                        </p>
-                        <span className="text-[9px] sm:text-[10px] text-[#A89F97]">Siap Dipesan</span>
-                    </div>
+                        <div className="rounded-2xl border border-[#342A2C] bg-[#221B1D] p-3.5 sm:p-4">
+                            <span className="text-[10px] sm:text-[11px] font-semibold text-[#A89F97] uppercase tracking-wider">
+                                Menu Aktif
+                            </span>
+                            <p className="mt-1 text-base sm:text-xl font-bold text-white">
+                                {products.filter((p) => p.is_available).length} / {products.length}
+                            </p>
+                            <span className="text-[9px] sm:text-[10px] text-[#A89F97]">Siap Dipesan</span>
+                        </div>
 
-                    <div className="col-span-2 lg:col-span-1 rounded-2xl border border-[#342A2C] bg-[#221B1D] p-3.5 sm:p-4">
-                        <span className="text-[10px] sm:text-[11px] font-semibold text-[#A89F97] uppercase tracking-wider">
-                            Audit Trail
-                        </span>
-                        <p className="mt-1 text-base sm:text-xl font-bold text-sky-400">
-                            {auditTotal} Log
-                        </p>
-                        <span className="text-[9px] sm:text-[10px] text-[#A89F97]">Aktivitas Sistem</span>
+                        <div className="col-span-2 lg:col-span-1 rounded-2xl border border-[#342A2C] bg-[#221B1D] p-3.5 sm:p-4">
+                            <span className="text-[10px] sm:text-[11px] font-semibold text-[#A89F97] uppercase tracking-wider">
+                                Audit Trail
+                            </span>
+                            <p className="mt-1 text-base sm:text-xl font-bold text-sky-400">
+                                {auditTotal} Log
+                            </p>
+                            <span className="text-[9px] sm:text-[10px] text-[#A89F97]">Aktivitas Sistem</span>
+                        </div>
                     </div>
-                </div>
+                )}
 
                 {/* Mobile Friendly Tabs */}
                 <div className="mb-4 sm:mb-6 overflow-x-auto no-scrollbar border-b border-[#2E2527] pb-2 flex gap-2 w-full min-w-0 max-w-full">
@@ -1503,6 +2316,21 @@ export default function AdminDashboardPage() {
                         {unprocessedOrdersCount > 0 ? (
                             <span className="rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-extrabold text-[#191415] shadow-xs animate-pulse">
                                 {unprocessedOrdersCount} Baru
+                            </span>
+                        ) : null}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab("ots")}
+                        className={`shrink-0 rounded-xl px-3.5 py-2 text-xs font-bold transition inline-flex items-center gap-2 ${activeTab === "ots"
+                            ? "bg-[#7A2E3A] text-white shadow-md shadow-[#7A2E3A]/40"
+                            : "bg-[#251E20] text-[#A89F97] hover:bg-[#2E2527] hover:text-white"
+                            }`}
+                    >
+                        <span>📝 Pesanan OTS</span>
+                        {pendingOtsCount > 0 ? (
+                            <span className="rounded-full bg-sky-400/20 border border-sky-400/40 px-1.5 py-0.5 text-[10px] font-bold text-sky-300">
+                                {pendingOtsCount}
                             </span>
                         ) : null}
                     </button>
@@ -1854,6 +2682,478 @@ export default function AdminDashboardPage() {
                                         )}
                                     </div>
                                 ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* ── TAB: CATATAN OTS (ON-THE-SPOT) ─────────────────────────── */}
+                {activeTab === "ots" && (
+                    <div className="space-y-4">
+                        {/* Header */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                            <div>
+                                <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                                    <span>📝</span> Catatan Jualan On The Spot (OTS)
+                                </h2>
+                                <p className="text-[11px] text-[#A89F97] mt-0.5">
+                                    Catatan bebas pesanan di luar menu Ava Eats, otomatis dikelompokkan per hari & tanggal.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowOtsMenuManager(true)}
+                                className="inline-flex h-8 self-start sm:self-auto shrink-0 items-center justify-center gap-1.5 rounded-xl border border-[#524245] bg-[#2E2527] px-3 text-[#E8A598] hover:bg-[#3E3234] transition"
+                            >
+                                <span className="text-[11px] font-bold leading-none">
+                                    🍽️ Menu OTS ({otsMenus.length})
+                                </span>
+                            </button>
+                        </div>
+
+                        {/* Collapsible Quick Add Card */}
+                        <div className="rounded-2xl border border-[#3E3234] bg-[#221B1D] shadow-sm overflow-hidden">
+                            <div
+                                onClick={() => !showOtsAddForm && setShowOtsAddForm(true)}
+                                className={`flex items-center justify-between gap-3 px-4 py-3 ${!showOtsAddForm ? "cursor-pointer hover:bg-[#271F21] transition" : "border-b border-[#2E2527] bg-[#1F191A]"}`}
+                            >
+                                <div className="min-w-0">
+                                    <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                                        <span>{showOtsAddForm ? "📝" : "➕"}</span>
+                                        <span>Masukan Pesanan OTS</span>
+                                    </p>
+                                    {!showOtsAddForm && (
+                                        <p className="text-[10px] text-[#A89F97] truncate mt-0.5">
+                                            Klik untuk mencatat pesanan baru
+                                        </p>
+                                    )}
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setShowOtsAddForm((prev) => !prev);
+                                    }}
+                                    className={`inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-xl px-3 transition ${showOtsAddForm
+                                        ? "border border-[#3E3234] bg-[#2E2527] text-[#D1C7BD] hover:bg-[#3E3234]"
+                                        : "bg-[#7A2E3A] text-white shadow-sm shadow-[#7A2E3A]/40 hover:bg-[#913745]"
+                                        }`}
+                                >
+                                    <span className="text-[11px] font-bold leading-none">
+                                        {showOtsAddForm ? "▲ Tutup" : "+ Buka Form"}
+                                    </span>
+                                </button>
+                            </div>
+
+                            {showOtsAddForm && (
+                                <form
+                                    onSubmit={handleCreateOtsNote}
+                                    className="p-4 space-y-3"
+                                >
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                        <div>
+                                            <label className="mb-1 block text-[11px] font-semibold text-[#D1C7BD]">
+                                                Tanggal <span className="text-red-400">*</span>
+                                                {otsDate && (
+                                                    <span className="ml-1.5 rounded bg-[#2E2527] px-1.5 py-0.5 text-[10px] text-[#E8A598]">
+                                                        Hari: {formatOtsDateHeader(otsDate, "").dayName}
+                                                    </span>
+                                                )}
+                                            </label>
+                                            <input
+                                                type="date"
+                                                required
+                                                value={otsDate}
+                                                onChange={(e) => setOtsDate(e.target.value)}
+                                                className="w-full rounded-xl border border-[#3E3234] bg-[#191415] px-3 py-2 text-xs text-white outline-none focus:border-[#E8A598]"
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label className="mb-1 block text-[11px] font-semibold text-[#D1C7BD]">
+                                                Nama Pembeli <span className="text-red-400">*</span>
+                                            </label>
+                                            <input
+                                                type="text"
+                                                required
+                                                value={otsCustomerName}
+                                                onChange={(e) => setOtsCustomerName(e.target.value)}
+                                                placeholder="cth: Fabiola"
+                                                className="w-full rounded-xl border border-[#3E3234] bg-[#191415] px-3 py-2 text-xs text-white placeholder-[#786D6B] placeholder:text-[10px] outline-none focus:border-[#E8A598]"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-3">
+                                        {renderOtsItemRowsEditor(otsItemRows, setOtsItemRows)}
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
+                                            <button
+                                                type="submit"
+                                                disabled={savingOtsNote}
+                                                className="shrink-0 rounded-xl bg-[#7A2E3A] px-5 py-2.5 text-xs font-bold text-white shadow-md shadow-[#7A2E3A]/40 transition hover:bg-[#913745] disabled:opacity-60"
+                                            >
+                                                <span className="text-xs font-bold leading-none">
+                                                    {savingOtsNote ? "Menyimpan..." : "+ Simpan Pesanan"}
+                                                </span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </form>
+                            )}
+                        </div>
+
+                        {/* Search & Filter */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                            <div className="relative flex-1">
+                                <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-xs text-[#A89F97]">
+                                    🔍
+                                </span>
+                                <input
+                                    type="text"
+                                    value={otsSearch}
+                                    onChange={(e) => setOtsSearch(e.target.value)}
+                                    placeholder="Cari pembeli, menu, atau hari..."
+                                    className="w-full rounded-xl border border-[#3E3234] bg-[#221B1D] pl-9 pr-9 py-2.5 text-xs text-white placeholder-[#786D6B] placeholder:text-[10px] outline-none focus:border-[#E8A598]"
+                                />
+                                {otsSearch && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setOtsSearch("")}
+                                        aria-label="Hapus pencarian"
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 flex h-5 w-5 items-center justify-center rounded-full bg-[#3E3234] text-[10px] font-bold text-[#D1C7BD] hover:bg-[#524245] hover:text-white"
+                                    >
+                                        ✕
+                                    </button>
+                                )}
+                            </div>
+
+                            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                                {[
+                                    { id: "pending", label: `Belum Selesai (${otsPendingCount})` },
+                                    { id: "unpaid", label: `Belum Bayar (${otsUnpaidCount})` },
+                                    { id: "done", label: `Lunas & Selesai (${otsDoneCount})` },
+                                    { id: "all", label: `Semua (${otsNotes.length})` },
+                                ].map((f) => (
+                                    <button
+                                        key={f.id}
+                                        type="button"
+                                        onClick={() => handleSelectOtsFilter(f.id)}
+                                        className={`shrink-0 rounded-full px-3 py-1.5 text-[11px] font-semibold transition ${otsStatusFilter === f.id
+                                            ? "bg-white text-[#191415]"
+                                            : "border border-[#342A2C] bg-[#221B1D] text-[#A89F97] hover:text-white"
+                                            }`}
+                                    >
+                                        <span className="text-[11px] font-semibold">{f.label}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Grouped List Per Hari */}
+                        {otsLoading && otsNotes.length === 0 ? (
+                            <p className="py-12 text-center text-xs text-[#A89F97]">Memuat catatan OTS...</p>
+                        ) : groupedOtsDays.length === 0 ? (
+                            <div className="rounded-2xl border border-[#342A2C] bg-[#221B1D] p-10 text-center">
+                                <span className="text-3xl block mb-2">📝</span>
+                                <p className="text-sm font-semibold text-white">
+                                    {otsSearch.trim() || otsStatusFilter !== "all"
+                                        ? "Catatan tidak ditemukan"
+                                        : "Belum ada catatan pesanan OTS"}
+                                </p>
+                                <p className="mt-1 text-xs text-[#A89F97]">
+                                    {otsSearch.trim() || otsStatusFilter !== "all"
+                                        ? "Coba ubah filter atau kata kunci pencarian."
+                                        : "Mulai catat pesanan harian di luar menu Ava Eats lewat form di atas."}
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {groupedOtsDays.map(([dateStr, dayNotes]) => {
+                                    const firstCustomLabel = dayNotes[0]?.day_label;
+                                    const { dayName, formattedDate } = formatOtsDateHeader(dateStr, firstCustomLabel);
+                                    const isToday = Boolean(todayWibDate && dateStr === todayWibDate);
+                                    const dayTotalAmount = dayNotes.reduce((sum, n) => sum + (Number(n.amount) || 0), 0);
+                                    const dayDoneCount = dayNotes.filter((n) => n.is_done).length;
+                                    const isRecapOpen = Boolean(openOtsRecapDates[dateStr]);
+                                    const dayAllNotes = otsNotes.filter(
+                                        (n) => (n.note_date || "tanpa-tanggal") === dateStr
+                                    );
+                                    const dayRecap = isRecapOpen
+                                        ? buildOtsDayRecap(dayAllNotes, otsRecapPendingOnly)
+                                        : null;
+
+                                    return (
+                                        <div
+                                            key={dateStr}
+                                            className="rounded-2xl border border-[#342A2C] bg-[#221B1D] shadow-sm"
+                                        >
+                                            {/* Day Header */}
+                                            <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-2xl border-b border-[#2E2527] bg-[#1F191A] px-4 py-3">
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <h3 className="text-sm font-bold text-white">
+                                                        {dayName}
+                                                    </h3>
+                                                    {formattedDate && (
+                                                        <span className="text-xs font-medium text-[#A89F97]">
+                                                            • {formattedDate}
+                                                        </span>
+                                                    )}
+                                                    {isToday && (
+                                                        <span className="rounded-full bg-emerald-500/20 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+                                                            Hari Ini
+                                                        </span>
+                                                    )}
+                                                </div>
+
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <span className="text-[11px] text-[#A89F97]">
+                                                        {dayDoneCount}/{dayNotes.length} selesai
+                                                    </span>
+                                                    {dayTotalAmount > 0 && (
+                                                        <span className="rounded-lg bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 text-[11px] font-bold text-emerald-300">
+                                                            Total: {formatRupiah(dayTotalAmount)}
+                                                        </span>
+                                                    )}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            setOpenOtsRecapDates((prev) => ({
+                                                                ...prev,
+                                                                [dateStr]: !prev[dateStr],
+                                                            }))
+                                                        }
+                                                        className={`inline-flex h-6 items-center justify-center gap-1 rounded-lg border px-2 text-[10px] font-bold leading-none transition ${isRecapOpen
+                                                            ? "border-[#E8A598] bg-[#7A2E3A] text-white"
+                                                            : "border-[#524245] bg-[#2E2527] text-[#E8A598] hover:bg-[#3E3234]"
+                                                            }`}
+                                                        title="Lihat rekap jumlah pesanan per menu"
+                                                    >
+                                                        <span className="text-[10px] font-bold leading-none">📊 Rekap Menu</span>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleCopyOtsDay(dateStr, firstCustomLabel, dayNotes)}
+                                                        className="inline-flex h-6 items-center justify-center gap-1 rounded-lg border border-[#524245] bg-[#2E2527] px-2 text-[10px] font-bold leading-none text-[#E8A598] hover:bg-[#3E3234] transition"
+                                                        title="Salin format teks ke WhatsApp"
+                                                    >
+                                                        <span className="text-[10px] font-bold leading-none">📋 Salin WA</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {/* Collapsible Rekap Menu Harian */}
+                                            {isRecapOpen && dayRecap && (
+                                                <div className="border-b border-[#2E2527] bg-[#191415]/90 px-4 py-3 space-y-2.5">
+                                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-xs font-bold text-[#E8A598]">
+                                                                📊 Rekap Menu ({dayName}{formattedDate ? ` • ${formattedDate}` : ""})
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex flex-wrap items-center gap-1.5">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setOtsRecapPendingOnly(false)}
+                                                                className={`inline-flex h-6 items-center rounded-full px-2.5 transition ${!otsRecapPendingOnly
+                                                                    ? "bg-white text-[#191415]"
+                                                                    : "border border-[#3E3234] bg-[#221B1D] text-[#A89F97] hover:text-white"
+                                                                    }`}
+                                                            >
+                                                                <span className="text-[10px] font-bold leading-none">Semua</span>
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setOtsRecapPendingOnly(true)}
+                                                                className={`inline-flex h-6 items-center rounded-full px-2.5 transition ${otsRecapPendingOnly
+                                                                    ? "bg-amber-400 text-[#191415]"
+                                                                    : "border border-[#3E3234] bg-[#221B1D] text-[#A89F97] hover:text-white"
+                                                                    }`}
+                                                            >
+                                                                <span className="text-[10px] font-bold leading-none">Belum Selesai</span>
+                                                            </button>
+                                                            {dayRecap.items.length > 0 && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleCopyOtsRecap(dateStr, firstCustomLabel, dayRecap, otsRecapPendingOnly)}
+                                                                    className="inline-flex h-6 items-center gap-1 rounded-lg border border-[#524245] bg-[#2E2527] px-2 text-[#E8A598] hover:bg-[#3E3234] transition"
+                                                                    title="Salin Rekap Menu ke WhatsApp"
+                                                                >
+                                                                    <span className="text-[10px] font-bold leading-none">📋 Salin Rekap</span>
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    {dayRecap.items.length === 0 ? (
+                                                        <p className="text-[11px] text-[#A89F97] py-1">
+                                                            {otsRecapPendingOnly
+                                                                ? "Semua pesanan di tanggal ini sudah selesai."
+                                                                : "Belum ada item menu yang tercatat."}
+                                                        </p>
+                                                    ) : (
+                                                        <>
+                                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                                                                {dayRecap.items.map((item) => (
+                                                                    <div
+                                                                        key={item.key}
+                                                                        className="flex items-center justify-between gap-2 rounded-xl border border-[#342A2C] bg-[#221B1D] px-3 py-2"
+                                                                    >
+                                                                        <div className="min-w-0">
+                                                                            <p className="text-xs font-semibold text-white truncate">
+                                                                                {item.name}
+                                                                            </p>
+                                                                            {!otsRecapPendingOnly && item.pendingQty > 0 && item.pendingQty < item.totalQty && (
+                                                                                <p className="text-[10px] text-amber-300">
+                                                                                    {item.pendingQty} belum selesai
+                                                                                </p>
+                                                                            )}
+                                                                        </div>
+                                                                        <span className="shrink-0 rounded-lg bg-[#7A2E3A]/40 border border-[#E8A598]/30 px-2 py-0.5 text-xs font-extrabold text-[#F5EFEB]">
+                                                                            = {item.totalQty}
+                                                                        </span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                            <p className="text-[11px] text-[#A89F97]">
+                                                                Total: <span className="font-semibold text-white">{dayRecap.items.length} jenis menu</span> •{" "}
+                                                                <span className="font-semibold text-white">{dayRecap.totalPortions} item</span> dari {dayRecap.totalOrders} pesanan
+                                                            </p>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {/* Notes List for This Day */}
+                                            <div className="divide-y divide-[#2E2527]">
+                                                {dayNotes.map((note) => (
+                                                    <div
+                                                        key={note.id}
+                                                        className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 px-4 py-3 last:rounded-b-2xl transition ${note.is_done ? "bg-[#1B1517]/60" : "hover:bg-[#271F21]"
+                                                            }`}
+                                                    >
+                                                        <div className="min-w-0 flex-1">
+                                                            {String(note.items_text || "").includes("\n") ? (
+                                                                <div className="space-y-1 text-xs sm:text-sm">
+                                                                    <div className="flex items-baseline gap-1.5">
+                                                                        <span className={`font-bold ${note.is_done ? "text-[#A89F97] line-through" : "text-[#E8A598]"}`}>
+                                                                            {note.customer_name}
+                                                                        </span>
+                                                                        <span className="text-[#786D6B] font-bold">:</span>
+                                                                    </div>
+                                                                    <div className={`whitespace-pre-line pl-2.5 border-l-2 border-[#3E3234] leading-relaxed ${note.is_done ? "text-[#786D6B] line-through" : "text-white font-medium"}`}>
+                                                                        {note.items_text}
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="flex flex-wrap items-baseline gap-1.5 text-xs sm:text-sm">
+                                                                    <span className={`font-bold ${note.is_done ? "text-[#A89F97] line-through" : "text-[#E8A598]"}`}>
+                                                                        {note.customer_name}
+                                                                    </span>
+                                                                    <span className="text-[#786D6B] font-bold">:</span>
+                                                                    <span className={`break-words ${note.is_done ? "text-[#786D6B] line-through" : "text-white font-medium"}`}>
+                                                                        {note.items_text}
+                                                                    </span>
+                                                                </div>
+                                                            )}
+                                                            <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-[#786D6B]">
+                                                                {note.amount !== null && note.amount !== undefined && (
+                                                                    <span className="rounded bg-emerald-950/50 border border-emerald-500/30 px-1.5 py-0.5 font-semibold text-emerald-300">
+                                                                        {formatRupiah(note.amount)}
+                                                                    </span>
+                                                                )}
+                                                                {note.created_by && (
+                                                                    <span>Dicatat oleh {note.created_by}</span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleToggleOtsField(note, "is_paid")}
+                                                                className={`inline-flex h-7 items-center justify-center rounded-lg border px-2.5 text-[11px] font-bold leading-none transition ${note.is_paid
+                                                                    ? "border-emerald-500/40 bg-emerald-950/60 text-emerald-300 hover:bg-emerald-900/60"
+                                                                    : "border-[#3E3234] bg-[#191415] text-[#A89F97] hover:border-amber-500/40 hover:text-amber-300"
+                                                                    }`}
+                                                            >
+                                                                <span className="text-[11px] font-bold leading-none">
+                                                                    {note.is_paid ? "💰 Lunas" : "Belum Bayar"}
+                                                                </span>
+                                                            </button>
+
+                                                            <label
+                                                                className={`inline-flex h-7 items-center justify-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-bold leading-none cursor-pointer select-none transition ${note.is_done
+                                                                    ? "border-emerald-500/40 bg-emerald-950/60 text-emerald-300"
+                                                                    : "border-[#3E3234] bg-[#191415] text-[#A89F97] hover:border-emerald-500/40 hover:text-emerald-300"
+                                                                    }`}
+                                                                title="Tandai pesanan sudah selesai / diserahkan"
+                                                            >
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={Boolean(note.is_done)}
+                                                                    onChange={() => handleToggleOtsField(note, "is_done")}
+                                                                    className="h-3.5 w-3.5 accent-emerald-500 rounded cursor-pointer"
+                                                                />
+                                                                <span className="text-[11px] font-bold leading-none">Selesai</span>
+                                                            </label>
+
+                                                            {/* Menu Titik Tiga: Edit, Struk, Hapus */}
+                                                            <div className="relative" data-ots-menu-container>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setOpenOtsMenuId((prev) => (prev === note.id ? null : note.id))}
+                                                                    aria-label="Menu aksi catatan"
+                                                                    title="Menu aksi (Edit, Struk, Hapus)"
+                                                                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-[#3E3234] bg-[#191415] text-sm font-bold leading-none text-[#D1C7BD] hover:bg-[#2E2527] hover:text-white transition"
+                                                                >
+                                                                    ⋮
+                                                                </button>
+
+                                                                {openOtsMenuId === note.id && (
+                                                                    <div className="absolute right-0 top-full z-30 mt-1.5 w-36 overflow-hidden rounded-xl border border-[#3E3234] bg-[#221B1D] py-1 shadow-xl shadow-black/50">
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                setOpenOtsMenuId(null);
+                                                                                openEditOtsModal(note);
+                                                                            }}
+                                                                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-[#D1C7BD] hover:bg-[#2E2527] hover:text-white transition"
+                                                                        >
+                                                                            <span>✏️</span> Edit
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                if (typeof window !== "undefined") {
+                                                                                    savedScrollYRef.current = window.scrollY;
+                                                                                }
+                                                                                setOpenOtsMenuId(null);
+                                                                                setPrintOrder(buildOtsReceiptOrder(note));
+                                                                            }}
+                                                                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-[#E8A598] hover:bg-[#2E2527] transition"
+                                                                        >
+                                                                            <span>🧾</span> Struk
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                setOpenOtsMenuId(null);
+                                                                                handleDeleteOtsNote(note);
+                                                                            }}
+                                                                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-red-400 hover:bg-red-950/40 transition"
+                                                                        >
+                                                                            <span>🗑️</span> Hapus
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
@@ -2312,44 +3612,139 @@ export default function AdminDashboardPage() {
                 {/* ── TAB 3: AUDIT TRAIL ────────────────────────────────────── */}
                 {activeTab === "audit" && (
                     <div className="space-y-4">
-                        {/* Audit Search Bar & Controls */}
-                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                            <div className="relative flex-1 max-w-md">
-                                <input
-                                    type="text"
-                                    value={auditSearch}
-                                    onChange={(e) => {
-                                        setAuditSearch(e.target.value);
-                                        fetchAuditTrails(e.target.value);
-                                    }}
-                                    placeholder="🔍 Cari log (ID order, aksi, nama admin, keyword)..."
-                                    className="w-full rounded-xl border border-[#3E3234] bg-[#221B1D] pl-3.5 pr-8 py-2.5 text-xs text-white placeholder-[#786D6B] outline-none focus:border-[#E8A598]"
-                                />
-                                {auditSearch && (
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setAuditSearch("");
-                                            fetchAuditTrails("");
-                                        }}
-                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[#A89F97] hover:text-white"
-                                    >
-                                        ✕
-                                    </button>
-                                )}
+                        {/* Audit Date Range (2 Kalender, Maks 1 Bulan) + Search */}
+                        <div className="rounded-2xl border border-[#342A2C] bg-[#221B1D] p-3.5 sm:p-4 space-y-3">
+                            <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
+                                {/* 2 Kalender Datepicker */}
+                                <div className="grid grid-cols-2 gap-2.5 sm:flex sm:items-end">
+                                    <div>
+                                        <label className="mb-1 block text-[10px] font-semibold text-[#A89F97]">
+                                            Dari Tanggal
+                                        </label>
+                                        <input
+                                            type="date"
+                                            value={auditStartDate}
+                                            max={auditEndDate || todayWibDate}
+                                            onChange={(e) => {
+                                                const newStart = e.target.value;
+                                                if (!newStart) return;
+                                                let nextEnd = auditEndDate || todayWibDate || newStart;
+                                                if (nextEnd < newStart) {
+                                                    nextEnd = newStart;
+                                                } else if (diffDaysBetween(newStart, nextEnd) > 31) {
+                                                    const maxEnd = shiftDateString(newStart, 31);
+                                                    nextEnd = todayWibDate && maxEnd > todayWibDate ? todayWibDate : maxEnd;
+                                                    showToast("Rentang audit trail maksimal 1 bulan (31 hari).", "info");
+                                                }
+                                                setAuditStartDate(newStart);
+                                                setAuditEndDate(nextEnd);
+                                                auditRangeRef.current = { startDate: newStart, endDate: nextEnd };
+                                                fetchAuditTrails(auditSearch, newStart, nextEnd);
+                                            }}
+                                            className="w-full rounded-xl border border-[#3E3234] bg-[#191415] px-2.5 py-2 text-xs text-white outline-none focus:border-[#E8A598]"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="mb-1 block text-[10px] font-semibold text-[#A89F97]">
+                                            Sampai Tanggal
+                                        </label>
+                                        <input
+                                            type="date"
+                                            value={auditEndDate}
+                                            min={auditStartDate}
+                                            max={todayWibDate}
+                                            onChange={(e) => {
+                                                const newEnd = e.target.value;
+                                                if (!newEnd) return;
+                                                let nextStart = auditStartDate || newEnd;
+                                                if (newEnd < nextStart) {
+                                                    nextStart = newEnd;
+                                                } else if (diffDaysBetween(nextStart, newEnd) > 31) {
+                                                    nextStart = shiftDateString(newEnd, -31);
+                                                    showToast("Rentang audit trail maksimal 1 bulan (31 hari).", "info");
+                                                }
+                                                setAuditStartDate(nextStart);
+                                                setAuditEndDate(newEnd);
+                                                auditRangeRef.current = { startDate: nextStart, endDate: newEnd };
+                                                fetchAuditTrails(auditSearch, nextStart, newEnd);
+                                            }}
+                                            className="w-full rounded-xl border border-[#3E3234] bg-[#191415] px-2.5 py-2 text-xs text-white outline-none focus:border-[#E8A598]"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Preset Cepat & Search */}
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                    {[
+                                        { label: "Hari Ini", days: 0 },
+                                        { label: "7 Hari", days: 6 },
+                                        { label: "1 Bulan", days: 30 },
+                                    ].map((preset) => {
+                                        const endRef = todayWibDate || auditEndDate;
+                                        const targetStart = endRef ? shiftDateString(endRef, -preset.days) : "";
+                                        const isActive = auditStartDate === targetStart && auditEndDate === endRef;
+                                        return (
+                                            <button
+                                                key={preset.label}
+                                                type="button"
+                                                onClick={() => {
+                                                    const end = todayWibDate || getTodayWibDate();
+                                                    const start = shiftDateString(end, -preset.days);
+                                                    setAuditStartDate(start);
+                                                    setAuditEndDate(end);
+                                                    auditRangeRef.current = { startDate: start, endDate: end };
+                                                    fetchAuditTrails(auditSearch, start, end);
+                                                }}
+                                                className={`inline-flex h-8 items-center justify-center rounded-xl px-3 transition ${isActive
+                                                    ? "bg-white text-[#191415]"
+                                                    : "border border-[#3E3234] bg-[#191415] text-[#A89F97] hover:text-white"
+                                                    }`}
+                                            >
+                                                <span className="text-[11px] font-bold leading-none">{preset.label}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
                             </div>
 
-                            <div className="flex items-center justify-between sm:justify-end gap-3">
-                                <span className="text-[11px] text-[#A89F97]">
-                                    {auditTrails.length} dari {auditTotal} aktivitas
-                                </span>
-                                <button
-                                    type="button"
-                                    onClick={() => fetchAuditTrails(auditSearch)}
-                                    className="rounded-xl border border-[#3E3234] bg-[#221B1D] px-3 py-2 text-xs font-semibold text-[#D1C7BD] hover:bg-[#2E2527] transition"
-                                >
-                                    ↻ Refresh Log
-                                </button>
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-2 border-t border-[#2E2527]">
+                                <div className="relative flex-1">
+                                    <input
+                                        type="text"
+                                        value={auditSearch}
+                                        onChange={(e) => {
+                                            setAuditSearch(e.target.value);
+                                            fetchAuditTrails(e.target.value);
+                                        }}
+                                        placeholder="🔍 Cari log (ID order, aksi, nama admin, keyword)..."
+                                        className="w-full rounded-xl border border-[#3E3234] bg-[#191415] pl-3.5 pr-8 py-2 text-xs text-white placeholder-[#786D6B] placeholder:text-[10px] outline-none focus:border-[#E8A598]"
+                                    />
+                                    {auditSearch && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setAuditSearch("");
+                                                fetchAuditTrails("");
+                                            }}
+                                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[#A89F97] hover:text-white"
+                                        >
+                                            ✕
+                                        </button>
+                                    )}
+                                </div>
+
+                                <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+                                    <span className="text-[11px] text-[#A89F97]">
+                                        {auditTrails.length} dari {auditTotal} aktivitas (maks 1 bulan)
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => fetchAuditTrails(auditSearch)}
+                                        className="inline-flex h-8 items-center justify-center rounded-xl border border-[#3E3234] bg-[#191415] px-3 text-[#D1C7BD] hover:bg-[#2E2527] transition"
+                                    >
+                                        <span className="text-[11px] font-semibold leading-none">↻ Refresh Log</span>
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
@@ -3398,11 +4793,10 @@ export default function AdminDashboardPage() {
                                         return (
                                             <div
                                                 key={order.id}
-                                                className={`rounded-xl border p-3.5 transition ${
-                                                    isCancelled
-                                                        ? "border-red-900/40 bg-[#1D1416] opacity-80"
-                                                        : "border-[#342A2C] bg-[#1A1416]"
-                                                }`}
+                                                className={`rounded-xl border p-3.5 transition ${isCancelled
+                                                    ? "border-red-900/40 bg-[#1D1416] opacity-80"
+                                                    : "border-[#342A2C] bg-[#1A1416]"
+                                                    }`}
                                             >
                                                 <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
                                                     <div className="flex flex-wrap items-center gap-2">
@@ -3410,13 +4804,12 @@ export default function AdminDashboardPage() {
                                                             #{order.order_code || order.id}
                                                         </strong>
                                                         <span
-                                                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                                                                isCancelled
-                                                                    ? "bg-red-950 text-red-400 border border-red-500/30"
-                                                                    : isPaid
+                                                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${isCancelled
+                                                                ? "bg-red-950 text-red-400 border border-red-500/30"
+                                                                : isPaid
                                                                     ? "bg-emerald-950 text-emerald-400 border border-emerald-500/30"
                                                                     : "bg-amber-950 text-amber-400 border border-amber-500/30"
-                                                            }`}
+                                                                }`}
                                                         >
                                                             {(order.status || "pending").toUpperCase()}
                                                         </span>
@@ -3428,13 +4821,13 @@ export default function AdminDashboardPage() {
                                                     <span className="text-[10px] text-[#A89F97]">
                                                         {order.created_at
                                                             ? formatDateTime(order.created_at, {
-                                                                  day: "numeric",
-                                                                  month: "short",
-                                                                  year: "numeric",
-                                                                  hour: "2-digit",
-                                                                  minute: "2-digit",
-                                                                  second: undefined,
-                                                              })
+                                                                day: "numeric",
+                                                                month: "short",
+                                                                year: "numeric",
+                                                                hour: "2-digit",
+                                                                minute: "2-digit",
+                                                                second: undefined,
+                                                            })
                                                             : "-"}
                                                     </span>
                                                 </div>
@@ -4250,11 +5643,276 @@ export default function AdminDashboardPage() {
                 </div>
             )}
 
+            {/* ── Edit Catatan OTS Modal ─────────────────────────────────────────────── */}
+            {showOtsEditModal && editingOtsNote && (
+                <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4 backdrop-blur-sm">
+                    <div className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-3xl sm:rounded-3xl border border-[#3E3234] bg-[#221B1D] p-5 sm:p-6 shadow-2xl text-white">
+                        <div className="flex items-center justify-between border-b border-[#2E2527] pb-3">
+                            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                                <span>📝</span> Edit Catatan OTS
+                            </h3>
+                            <button
+                                type="button"
+                                disabled={savingEditOts}
+                                onClick={closeOtsEditModal}
+                                className="flex h-8 w-8 items-center justify-center rounded-full bg-[#2E2527] text-sm text-[#A89F97] hover:bg-[#3E3234]"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSaveEditOts} className="mt-4 space-y-3.5">
+                            <div>
+                                <label className="mb-1 block text-xs font-semibold text-[#D1C7BD]">
+                                    Tanggal *
+                                    {editOtsDate && (
+                                        <span className="ml-1.5 rounded bg-[#2E2527] px-1.5 py-0.5 text-[10px] text-[#E8A598]">
+                                            Hari: {formatOtsDateHeader(editOtsDate, "").dayName}
+                                        </span>
+                                    )}
+                                </label>
+                                <input
+                                    type="date"
+                                    required
+                                    value={editOtsDate}
+                                    onChange={(e) => setEditOtsDate(e.target.value)}
+                                    className="w-full rounded-xl border border-[#3E3234] bg-[#191415] px-3 py-2 text-xs text-white outline-none focus:border-[#E8A598]"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="mb-1 block text-xs font-semibold text-[#D1C7BD]">
+                                    Nama Pembeli *
+                                </label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={editOtsCustomerName}
+                                    onChange={(e) => setEditOtsCustomerName(e.target.value)}
+                                    className="w-full rounded-xl border border-[#3E3234] bg-[#191415] px-3 py-2 text-xs text-white outline-none focus:border-[#E8A598]"
+                                />
+                            </div>
+
+                            {renderOtsItemRowsEditor(editOtsItemRows, setEditOtsItemRows)}
+
+                            <div className="flex flex-wrap gap-4 pt-1">
+                                <label className="inline-flex items-center gap-2 text-xs font-semibold text-[#D1C7BD] cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={editOtsIsPaid}
+                                        onChange={(e) => setEditOtsIsPaid(e.target.checked)}
+                                        className="h-4 w-4 accent-emerald-500 rounded"
+                                    />
+                                    💰 Sudah Lunas
+                                </label>
+                                <label className="inline-flex items-center gap-2 text-xs font-semibold text-[#D1C7BD] cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={editOtsIsDone}
+                                        onChange={(e) => setEditOtsIsDone(e.target.checked)}
+                                        className="h-4 w-4 accent-emerald-500 rounded"
+                                    />
+                                    ✅ Pesanan Selesai
+                                </label>
+                            </div>
+
+                            <div className="mt-5 flex gap-2 pt-2 border-t border-[#2E2527]">
+                                <button
+                                    type="button"
+                                    disabled={savingEditOts}
+                                    onClick={closeOtsEditModal}
+                                    className="flex-1 rounded-xl border border-[#3E3234] py-2.5 text-xs font-bold text-[#D1C7BD] hover:bg-[#2E2527]"
+                                >
+                                    Batal
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={savingEditOts}
+                                    className="flex-1 rounded-xl bg-[#7A2E3A] py-2.5 text-xs font-bold text-white shadow-md shadow-[#7A2E3A]/40 transition hover:bg-[#913745] disabled:opacity-60"
+                                >
+                                    {savingEditOts ? "Menyimpan..." : "Simpan Perubahan"}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Kelola Master Menu OTS Modal ────────────────────────────────────────── */}
+            {showOtsMenuManager && (
+                <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4 backdrop-blur-sm">
+                    <div className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-3xl sm:rounded-3xl border border-[#3E3234] bg-[#221B1D] p-5 sm:p-6 shadow-2xl text-white">
+                        <div className="flex items-center justify-between border-b border-[#2E2527] pb-3">
+                            <div>
+                                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                                    <span>🍽️</span> Kelola Menu OTS
+                                </h3>
+                                <p className="text-[10px] text-[#A89F97] mt-0.5">
+                                    Simpan menu OTS & harga agar bisa langsung dipilih saat mencatat pesanan.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setEditingOtsMenuId(null);
+                                    setShowOtsMenuManager(false);
+                                }}
+                                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#2E2527] text-sm text-[#A89F97] hover:bg-[#3E3234]"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        {/* Tambah Menu OTS Baru */}
+                        <form onSubmit={handleCreateOtsMenu} className="mt-4 space-y-2.5 border-b border-[#2E2527] pb-4">
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    required
+                                    value={newOtsMenuName}
+                                    onChange={(e) => setNewOtsMenuName(e.target.value)}
+                                    placeholder="Nama menu (cth: Nasi Putih)"
+                                    className="min-w-0 flex-1 rounded-xl border border-[#3E3234] bg-[#191415] px-3 py-2 text-xs text-white placeholder-[#786D6B] placeholder:text-[10px] outline-none focus:border-[#E8A598]"
+                                />
+                                <div className="relative w-28 shrink-0">
+                                    <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-[#786D6B]">
+                                        Rp
+                                    </span>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={newOtsMenuPrice}
+                                        onChange={(e) => setNewOtsMenuPrice(e.target.value)}
+                                        placeholder="5000"
+                                        className="w-full rounded-xl border border-[#3E3234] bg-[#191415] pl-8 pr-2.5 py-2 text-xs text-white placeholder-[#786D6B] placeholder:text-[10px] outline-none focus:border-[#E8A598]"
+                                    />
+                                </div>
+                            </div>
+                            <button
+                                type="submit"
+                                disabled={savingOtsMenu}
+                                className="w-full rounded-xl bg-[#7A2E3A] py-2 text-xs font-bold text-white shadow-sm shadow-[#7A2E3A]/40 transition hover:bg-[#913745] disabled:opacity-60"
+                            >
+                                <span className="text-xs font-bold leading-none">
+                                    {savingOtsMenu ? "Menyimpan..." : "+ Tambah ke Daftar Menu OTS"}
+                                </span>
+                            </button>
+                        </form>
+
+                        {/* Daftar Menu OTS Tersimpan */}
+                        <div className="mt-4 space-y-2 max-h-64 overflow-y-auto pr-0.5">
+                            {otsMenusLoading && otsMenus.length === 0 ? (
+                                <p className="py-6 text-center text-xs text-[#A89F97]">Memuat menu OTS...</p>
+                            ) : otsMenus.length === 0 ? (
+                                <p className="py-6 text-center text-xs text-[#786D6B]">
+                                    Belum ada menu OTS tersimpan. Tambahkan di atas!
+                                </p>
+                            ) : (
+                                otsMenus.map((menu) => (
+                                    <div
+                                        key={menu.id}
+                                        className="rounded-xl border border-[#2E2527] bg-[#191415] px-3 py-2.5"
+                                    >
+                                        {editingOtsMenuId === menu.id ? (
+                                            <div className="space-y-2">
+                                                <div className="flex items-center gap-2">
+                                                    <input
+                                                        type="text"
+                                                        value={editOtsMenuName}
+                                                        onChange={(e) => setEditOtsMenuName(e.target.value)}
+                                                        className="min-w-0 flex-1 rounded-lg border border-[#3E3234] bg-[#221B1D] px-2.5 py-1.5 text-xs text-white outline-none focus:border-[#E8A598]"
+                                                    />
+                                                    <div className="relative w-24 shrink-0">
+                                                        <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-[#786D6B]">
+                                                            Rp
+                                                        </span>
+                                                        <input
+                                                            type="number"
+                                                            min="0"
+                                                            value={editOtsMenuPrice}
+                                                            onChange={(e) => setEditOtsMenuPrice(e.target.value)}
+                                                            className="w-full rounded-lg border border-[#3E3234] bg-[#221B1D] pl-7 pr-2 py-1.5 text-xs text-white outline-none focus:border-[#E8A598]"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="flex justify-end gap-1.5">
+                                                    <button
+                                                        type="button"
+                                                        disabled={savingEditOtsMenu}
+                                                        onClick={() => setEditingOtsMenuId(null)}
+                                                        className="rounded-lg border border-[#3E3234] px-2.5 py-1 text-[10px] font-semibold text-[#D1C7BD] hover:bg-[#2E2527]"
+                                                    >
+                                                        <span className="text-[10px] font-semibold">Batal</span>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        disabled={savingEditOtsMenu}
+                                                        onClick={() => handleSaveEditOtsMenu(menu.id)}
+                                                        className="rounded-lg bg-emerald-700 px-2.5 py-1 text-[10px] font-bold text-white hover:bg-emerald-600 disabled:opacity-60"
+                                                    >
+                                                        <span className="text-[10px] font-bold">
+                                                            {savingEditOtsMenu ? "..." : "Simpan"}
+                                                        </span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center justify-between gap-2">
+                                                <div className="min-w-0">
+                                                    <p className="text-xs font-bold text-white truncate">{menu.name}</p>
+                                                    <p className="text-[11px] font-semibold text-emerald-400">
+                                                        {menu.price > 0 ? formatRupiah(menu.price) : "Tanpa harga default"}
+                                                    </p>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => openInlineEditOtsMenu(menu)}
+                                                        className="inline-flex h-7 items-center justify-center rounded-lg border border-[#3E3234] bg-[#221B1D] px-2 text-[#D1C7BD] hover:bg-[#2E2527]"
+                                                        title="Edit menu"
+                                                    >
+                                                        <span className="text-[10px] font-semibold leading-none">✏️ Edit</span>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleDeleteOtsMenu(menu)}
+                                                        className="inline-flex h-7 items-center justify-center rounded-lg border border-red-500/30 bg-[#221B1D] px-2 text-red-400 hover:bg-red-950/40"
+                                                        title="Hapus menu"
+                                                    >
+                                                        <span className="text-[10px] font-semibold leading-none">Hapus</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))
+                            )}
+                        </div>
+
+                        <div className="mt-4 pt-3 border-t border-[#2E2527]">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setEditingOtsMenuId(null);
+                                    setShowOtsMenuManager(false);
+                                }}
+                                className="w-full rounded-xl border border-[#3E3234] py-2 text-xs font-bold text-[#D1C7BD] hover:bg-[#2E2527]"
+                            >
+                                <span className="text-xs font-bold leading-none">Tutup</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* ── Thermal Receipt & Shipping Label Modal ──────────────────────────────── */}
             {printOrder && (
                 <ThermalReceiptModal
                     order={printOrder}
-                    onClose={() => setPrintOrder(null)}
+                    onClose={() => {
+                        setPrintOrder(null);
+                        restoreScrollPosition(savedScrollYRef.current);
+                    }}
                 />
             )}
 

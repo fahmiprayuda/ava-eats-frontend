@@ -9,13 +9,15 @@ const formatNumber = (num) =>
 
 export default function ThermalReceiptModal({ order, onClose }) {
     const [paperSize, setPaperSize] = useState("80mm"); // "58mm" | "80mm"
+    const [qrisLoadError, setQrisLoadError] = useState(false);
     const barcodeRef = useRef(null);
 
+    const isOts = Boolean(order && (order.is_ots || String(order.order_code || "").startsWith("OTS-")));
     const orderCode = order ? (order.order_code || `ORD-${order.id}`) : "";
     const trackingNumber = order ? (order.tracking_number || "") : "";
 
     useEffect(() => {
-        if (!barcodeRef.current) return;
+        if (isOts || !barcodeRef.current) return;
         const codeToRender = (trackingNumber || orderCode).trim();
         if (!codeToRender) return;
 
@@ -44,7 +46,7 @@ export default function ThermalReceiptModal({ order, onClose }) {
         } catch (err) {
             console.error("[Barcode Render Error]", err);
         }
-    }, [trackingNumber, orderCode, paperSize]);
+    }, [isOts, trackingNumber, orderCode, paperSize]);
 
     if (!order) return null;
 
@@ -231,15 +233,17 @@ export default function ThermalReceiptModal({ order, onClose }) {
                                 <span className="w-3 text-black font-medium shrink-0">:</span>
                                 <span className="flex-1 text-black font-medium uppercase">{customerName}</span>
                             </div>
-                            <div className="flex items-start">
-                                <span className="w-24 sm:w-28 text-black font-semibold uppercase shrink-0">PICK-UP</span>
-                                <span className="w-3 text-black font-medium shrink-0">:</span>
-                                <span className="flex-1 text-black font-medium uppercase">
-                                    {isDelivery
-                                        ? (order.courier ? order.courier.toUpperCase() : "DELIVERY")
-                                        : "OUTLET PICK-UP"}
-                                </span>
-                            </div>
+                            {!isOts && (
+                                <div className="flex items-start">
+                                    <span className="w-24 sm:w-28 text-black font-semibold uppercase shrink-0">PICK-UP</span>
+                                    <span className="w-3 text-black font-medium shrink-0">:</span>
+                                    <span className="flex-1 text-black font-medium uppercase">
+                                        {isDelivery
+                                            ? (order.courier ? order.courier.toUpperCase() : "DELIVERY")
+                                            : "OUTLET PICK-UP"}
+                                    </span>
+                                </div>
+                            )}
                         </div>
 
                         {/* ── 3. Table Items Header ── */}
@@ -318,17 +322,36 @@ export default function ThermalReceiptModal({ order, onClose }) {
                             </span>
                         </div>
 
-                        {/* ── 6. Barcode Section (Rapi, Terpusat, Gap Rapat) ── */}
-                        <div className="mt-3 mb-2 flex flex-col items-center justify-center w-full px-2">
-                            <div className="w-full flex items-center justify-center">
-                                <svg ref={barcodeRef} />
+                        {/* ── 6. QRIS Static (OTS jika masih UNPAID) atau Barcode (Order Reguler) ── */}
+                        {isOts ? (
+                            isPending && !qrisLoadError ? (
+                                <div className="mt-3 mb-2 flex flex-col items-center justify-center w-full px-2">
+                                    <div className="flex flex-col items-center">
+                                        <p className="text-[9.5px] font-bold uppercase tracking-widest text-black mb-1.5 text-center">
+                                            SCAN QRIS UNTUK PEMBAYARAN
+                                        </p>
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img
+                                            src="/qris-bca.png"
+                                            alt="QRIS Static BCA"
+                                            onError={() => setQrisLoadError(true)}
+                                            className={`object-contain rounded border border-gray-300 bg-white p-1 ${paperSize === "58mm" ? "w-36 h-36" : "w-44 h-44"}`}
+                                        />
+                                    </div>
+                                </div>
+                            ) : null
+                        ) : (
+                            <div className="mt-3 mb-2 flex flex-col items-center justify-center w-full px-2">
+                                <div className="w-full flex items-center justify-center">
+                                    <svg ref={barcodeRef} />
+                                </div>
+                                <span className="text-[8.5px] font-mono tracking-widest text-black mt-1 uppercase font-semibold text-center">
+                                    {order.tracking_number
+                                        ? `* RESI: ${order.tracking_number} *`
+                                        : `* ORDER: ${orderCode} *`}
+                                </span>
                             </div>
-                            <span className="text-[8.5px] font-mono tracking-widest text-black mt-1 uppercase font-semibold text-center">
-                                {order.tracking_number
-                                    ? `* RESI: ${order.tracking_number} *`
-                                    : `* ORDER: ${orderCode} *`}
-                            </span>
-                        </div>
+                        )}
 
                         {/* ── 7. Thank You Footer ── */}
                         <div className="text-center pt-2 pb-4">
