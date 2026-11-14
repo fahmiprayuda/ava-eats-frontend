@@ -1726,7 +1726,7 @@ export default function AdminDashboardPage() {
                                     className="w-full sm:w-auto sm:flex-1 min-w-0 rounded-xl border border-[#3E3234] bg-[#191415] px-3 py-2 text-xs text-white placeholder-[#786D6B] placeholder:text-[10px] outline-none focus:border-[#E8A598]"
                                 />
                                 <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
-                                    {/* Qty Stepper */}
+                                    {/* Qty Stepper & Manual Input */}
                                     <div className="inline-flex h-8 shrink-0 items-center rounded-xl border border-[#3E3234] bg-[#191415] overflow-hidden">
                                         <button
                                             type="button"
@@ -1737,9 +1737,23 @@ export default function AdminDashboardPage() {
                                         >
                                             <span className="text-xs font-bold leading-none">−</span>
                                         </button>
-                                        <span className="w-6 text-center text-[11px] font-bold text-white select-none">
-                                            {qty}
-                                        </span>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            value={row.qty ?? 1}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                updateOtsRowField(setter, index, "qty", val === "" ? "" : Math.max(1, parseInt(val, 10) || 1));
+                                            }}
+                                            onBlur={(e) => {
+                                                const parsed = parseInt(e.target.value, 10);
+                                                if (!parsed || parsed < 1) {
+                                                    updateOtsRowField(setter, index, "qty", 1);
+                                                }
+                                            }}
+                                            className="w-10 text-center text-xs font-bold text-white bg-transparent outline-none py-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                            title="Ketik jumlah Qty langsung"
+                                        />
                                         <button
                                             type="button"
                                             onClick={() => adjustOtsRowQty(setter, index, 1)}

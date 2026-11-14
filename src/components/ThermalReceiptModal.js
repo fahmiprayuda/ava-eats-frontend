@@ -10,6 +10,7 @@ const formatNumber = (num) =>
 export default function ThermalReceiptModal({ order, onClose }) {
     const [paperSize, setPaperSize] = useState("80mm"); // "58mm" | "80mm"
     const [qrisLoadError, setQrisLoadError] = useState(false);
+    const [downloadingImage, setDownloadingImage] = useState(false);
     const barcodeRef = useRef(null);
 
     const isOts = Boolean(order && (order.is_ots || String(order.order_code || "").startsWith("OTS-")));
@@ -52,6 +53,32 @@ export default function ThermalReceiptModal({ order, onClose }) {
 
     function handlePrint() {
         window.print();
+    }
+
+    async function handleDownloadReceipt() {
+        const receiptElement = document.getElementById("thermal-receipt-printable");
+        if (!receiptElement || downloadingImage) return;
+
+        setDownloadingImage(true);
+        try {
+            const { domToPng } = await import("modern-screenshot");
+            const dataUrl = await domToPng(receiptElement, {
+                scale: 3, // Skala 3x agar teks tajam & jernih saat dibaca/dicetak
+                backgroundColor: "#ffffff",
+                quality: 1,
+            });
+
+            const link = document.createElement("a");
+            const safeCode = (orderCode || "struk").replace(/[^a-zA-Z0-9_-]/g, "_");
+            link.download = `Struk-${safeCode}-${paperSize}.png`;
+            link.href = dataUrl;
+            link.click();
+        } catch (err) {
+            console.error("[Download Receipt Error]", err);
+            alert("Gagal mengunduh gambar struk. Silakan coba kembali atau gunakan tombol Cetak.");
+        } finally {
+            setDownloadingImage(false);
+        }
     }
 
     const customerName = order.customer_name || order.customer?.name || order.recipient_name || "Pelanggan";
@@ -372,13 +399,23 @@ export default function ThermalReceiptModal({ order, onClose }) {
                 </div>
 
                 {/* Footer Modal Actions */}
-                <div className="flex items-center justify-end gap-2 border-t border-[#2E2527] bg-[#1F191A] px-4 py-3 sm:px-5">
+                <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[#2E2527] bg-[#1F191A] px-4 py-3 sm:px-5">
                     <button
                         type="button"
                         onClick={onClose}
                         className="rounded-xl border border-[#3E3234] px-4 py-2 text-xs font-semibold text-[#D1C7BD] hover:bg-[#2E2527] transition"
                     >
                         Tutup
+                    </button>
+                    <button
+                        type="button"
+                        disabled={downloadingImage}
+                        onClick={handleDownloadReceipt}
+                        className="rounded-xl border border-[#524245] bg-[#2E2527] px-4 py-2 text-xs font-bold text-[#E8A598] hover:bg-[#3E3234] hover:text-white transition flex items-center gap-1.5 disabled:opacity-50"
+                        title={`Download gambar struk ukuran ${paperSize}`}
+                    >
+                        <span>{downloadingImage ? "⏳" : "📥"}</span>
+                        <span>{downloadingImage ? "Memproses..." : `Download Struk (${paperSize})`}</span>
                     </button>
                     <button
                         type="button"
