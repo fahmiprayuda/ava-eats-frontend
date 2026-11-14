@@ -221,7 +221,7 @@ export default function ThermalReceiptModal({ order, onClose }) {
                                 <img
                                     src="/receipt-logo.png"
                                     alt="Ava Eats Mascot"
-                                    className="h-16 w-16 sm:h-20 sm:w-20 rounded-full object-cover border border-gray-200 shrink-0 shadow-xs"
+                                    className="h-16 w-16 sm:h-20 sm:w-20 object-contain shrink-0"
                                 />
                             </div>
 
