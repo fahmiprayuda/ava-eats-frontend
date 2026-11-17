@@ -2,11 +2,13 @@
 
 import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiRequest } from "@/lib/api";
 
 function AdminLoginForm() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const isExpired = searchParams.get("expired") === "1";
 
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
@@ -76,6 +78,15 @@ function AdminLoginForm() {
 
                 {/* Login Card */}
                 <div className="rounded-3xl border border-[#3A2F31] bg-[#2A2224] p-7 shadow-2xl">
+                    {isExpired && !successMsg && !error && (
+                        <div
+                            role="alert"
+                            className="mb-5 rounded-xl border border-amber-500/30 bg-amber-950/40 px-4 py-3 text-xs font-semibold text-amber-300"
+                        >
+                            ⚠️ Sesi admin telah berakhir. Silakan masuk kembali.
+                        </div>
+                    )}
+
                     {successMsg && (
                         <div
                             role="status"

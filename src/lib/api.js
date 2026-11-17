@@ -87,10 +87,32 @@ export function isTokenExpired(token) {
 }
 
 /**
- * Hapus sesi login lokal dan arahkan user ke halaman login.
+ * Hapus sesi login admin dan arahkan ke halaman login admin.
+ */
+export function handleAdminSessionExpired() {
+    if (typeof window === "undefined") return;
+
+    localStorage.removeItem("ava_eats_admin_token");
+    localStorage.removeItem("ava_eats_admin_user");
+
+    // Jangan redirect jika sudah di halaman login admin
+    if (window.location.pathname === "/admin/login") return;
+
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+    window.location.href = "/admin/login?expired=1";
+}
+
+/**
+ * Hapus sesi login lokal dan arahkan user ke halaman login customer.
  */
 export function handleSessionExpired(customRedirect) {
     if (typeof window === "undefined") return;
+
+    // JIKA saat ini sedang berada di area admin, jangan pernah arahkan ke /login customer!
+    if (window.location.pathname.startsWith("/admin")) {
+        handleAdminSessionExpired();
+        return;
+    }
 
     localStorage.removeItem("ava_eats_access_token");
     localStorage.removeItem("ava_eats_customer");
@@ -108,9 +130,15 @@ export function handleSessionExpired(customRedirect) {
 }
 
 export async function apiRequest(path, options = {}) {
+    const isAdminContext = Boolean(
+        options.useAdminToken ||
+        path.startsWith("/admins") ||
+        (typeof window !== "undefined" && window.location.pathname.startsWith("/admin"))
+    );
+
     let token = null;
     if (typeof window !== "undefined") {
-        if (options.useAdminToken || path.startsWith("/admins")) {
+        if (isAdminContext) {
             token = localStorage.getItem("ava_eats_admin_token");
         } else {
             token = localStorage.getItem("ava_eats_access_token");
@@ -118,24 +146,31 @@ export async function apiRequest(path, options = {}) {
     }
 
     // Jika token sudah expired secara lokal sebelum request dikirim
-    if (token && isTokenExpired(token) && !path.startsWith("/admins")) {
+    if (token && isTokenExpired(token)) {
         token = null;
         if (typeof window !== "undefined") {
-            localStorage.removeItem("ava_eats_access_token");
-            localStorage.removeItem("ava_eats_customer");
-
-            // Jika endpoint butuh autentikasi customer, langsung arahkan ke login
-            if (
-                path.startsWith("/customers/me") ||
-                path.startsWith("/orders") ||
-                path.startsWith("/payments")
-            ) {
-                handleSessionExpired();
-                const err = new Error(
-                    "Sesi login telah berakhir. Silakan masuk kembali."
-                );
+            if (isAdminContext) {
+                handleAdminSessionExpired();
+                const err = new Error("Sesi admin telah berakhir. Silakan login kembali.");
                 err.status = 401;
                 throw err;
+            } else {
+                localStorage.removeItem("ava_eats_access_token");
+                localStorage.removeItem("ava_eats_customer");
+
+                // Jika endpoint butuh autentikasi customer, langsung arahkan ke login customer
+                if (
+                    path.startsWith("/customers/me") ||
+                    path.startsWith("/orders") ||
+                    path.startsWith("/payments")
+                ) {
+                    handleSessionExpired();
+                    const err = new Error(
+                        "Sesi login telah berakhir. Silakan masuk kembali."
+                    );
+                    err.status = 401;
+                    throw err;
+                }
             }
         }
     }
@@ -160,13 +195,8 @@ export async function apiRequest(path, options = {}) {
     if (!response.ok) {
         // Tangani 401 Unauthorized dari server (token expired / invalid)
         if (response.status === 401 && path !== "/customers/login" && path !== "/auth/login") {
-            if (path.startsWith("/admins") || options.useAdminToken) {
-                if (typeof window !== "undefined") {
-                    localStorage.removeItem("ava_eats_admin_token");
-                    localStorage.removeItem("ava_eats_admin_user");
-                    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-                    window.location.href = "/admin/login?expired=1";
-                }
+            if (isAdminContext) {
+                handleAdminSessionExpired();
             } else {
                 handleSessionExpired();
             }

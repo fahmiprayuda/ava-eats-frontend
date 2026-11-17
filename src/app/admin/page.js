@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { apiRequest, getImageUrl, parseUtcDate, formatDateTime } from "@/lib/api";
+import { apiRequest, isTokenExpired, getImageUrl, parseUtcDate, formatDateTime } from "@/lib/api";
 import ThermalReceiptModal from "@/components/ThermalReceiptModal";
 import { showToast as modernToast, showAlert, showConfirm } from "@/components/ModernDialog";
 
@@ -494,8 +494,10 @@ export default function AdminDashboardPage() {
     useEffect(() => {
         const token = localStorage.getItem("ava_eats_admin_token");
 
-        if (!token) {
-            router.push("/admin/login");
+        if (!token || isTokenExpired(token)) {
+            localStorage.removeItem("ava_eats_admin_token");
+            localStorage.removeItem("ava_eats_admin_user");
+            router.push("/admin/login?expired=1");
             return;
         }
 
