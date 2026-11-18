@@ -698,9 +698,16 @@ function OrdersContent() {
                                             <p className="text-xs text-[#8A7778]">
                                                 Kode pesanan
                                             </p>
-                                            <h2 className="mt-1 font-bold">
-                                                {order.order_code}
-                                            </h2>
+                                            <div className="flex items-center gap-2 flex-wrap mt-1">
+                                                <h2 className="font-bold">
+                                                    {order.order_code}
+                                                </h2>
+                                                {order.is_preorder && (
+                                                    <span className="rounded-full bg-sky-100 border border-sky-300 text-sky-800 px-2 py-0.5 text-[10px] font-bold">
+                                                        ⏳ Pre-Order
+                                                    </span>
+                                                )}
+                                            </div>
                                             <p className="mt-1 text-xs text-[#8A7778]">
                                                 {formatDate(order.created_at)}
                                             </p>
@@ -939,6 +946,25 @@ function OrdersContent() {
                                         </div>
                                     </div>
 
+                                    {/* ── Jadwal Pre-Order (Frozen) ── */}
+                                    {order.is_preorder && (
+                                        <div className="mt-4 rounded-xl border border-sky-300 bg-sky-50/90 p-3.5 text-xs text-sky-950 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 shadow-2xs">
+                                            <span className="flex items-center gap-1.5 font-bold text-sky-900">
+                                                <span>⏳</span> {order.fulfillment_method === "pickup" ? "Jadwal Siap Ambil di Outlet:" : "Estimasi Jadwal Kirim Ekspedisi:"}
+                                            </span>
+                                            <span className="font-extrabold text-sky-950 bg-white/95 px-2.5 py-1 rounded-lg border border-sky-200">
+                                                📅 {order.estimated_delivery_date
+                                                    ? new Date(order.estimated_delivery_date).toLocaleDateString("id-ID", {
+                                                        weekday: "long",
+                                                        day: "numeric",
+                                                        month: "long",
+                                                        year: "numeric",
+                                                    })
+                                                    : "Akan dikonfirmasi admin"}
+                                            </span>
+                                        </div>
+                                    )}
+
                                     {/* ── Payment status ── */}
                                     <div className="mt-4 rounded-xl bg-[#FAF7F2] p-3">
                                         <p className="text-xs text-[#8A7778]">
@@ -1042,7 +1068,7 @@ function OrdersContent() {
                                                         <div className="text-xs text-[#78686A]">
                                                             <p>
                                                                 {order.status === "paid" || order.status === "processing"
-                                                                    ? "⏳ Dapur sedang menyiapkan makanan. Driver instan akan dipanggil sesaat sebelum pesanan siap diantar."
+                                                                    ? "⏳ Outlet sedang menyiapkan makanan. Driver instan akan dipanggil sesaat sebelum pesanan siap diantar."
                                                                     : "Driver instan akan dialokasikan setelah pembayaran dikonfirmasi."}
                                                             </p>
                                                             <button

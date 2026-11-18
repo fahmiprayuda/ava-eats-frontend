@@ -198,6 +198,9 @@ export default function AdminDashboardPage() {
     const [prodStock, setProdStock] = useState(10);
     const [prodImage, setProdImage] = useState("");
     const [prodAvailable, setProdAvailable] = useState(true);
+    const [prodIsPreorder, setProdIsPreorder] = useState(false);
+    const [prodPreorderDays, setProdPreorderDays] = useState(7);
+    const [prodPreorderPickupDate, setProdPreorderPickupDate] = useState("");
     const [prodCategoryId, setProdCategoryId] = useState("");
     const [savingProduct, setSavingProduct] = useState(false);
     const [uploadingImage, setUploadingImage] = useState(false);
@@ -833,6 +836,9 @@ export default function AdminDashboardPage() {
         setProdStock(15);
         setProdImage("");
         setProdAvailable(true);
+        setProdIsPreorder(false);
+        setProdPreorderDays(7);
+        setProdPreorderPickupDate("");
         setProdCategoryId("");
         setShowCustomUrl(false);
         setShowProductModal(true);
@@ -850,6 +856,9 @@ export default function AdminDashboardPage() {
         setProdStock(p.stock || 0);
         setProdImage(p.image || "");
         setProdAvailable(Boolean(p.is_available));
+        setProdIsPreorder(Boolean(p.is_preorder));
+        setProdPreorderDays(Number(p.preorder_days) || 7);
+        setProdPreorderPickupDate(p.preorder_pickup_date || "");
         setProdCategoryId(p.category_id ? String(p.category_id) : "");
         setShowCustomUrl(Boolean(p.image && !p.image.includes("/uploads/")));
         setShowProductModal(true);
@@ -924,6 +933,9 @@ export default function AdminDashboardPage() {
             stock: Math.max(0, Number(prodStock)),
             image: prodImage.trim() || null,
             is_available: Number(prodStock) === 0 ? false : prodAvailable,
+            is_preorder: prodIsPreorder,
+            preorder_days: Math.max(1, Number(prodPreorderDays) || 1),
+            preorder_pickup_date: prodIsPreorder && prodPreorderPickupDate ? prodPreorderPickupDate : null,
             category_id: prodCategoryId ? Number(prodCategoryId) : null,
         };
 
@@ -1001,6 +1013,10 @@ export default function AdminDashboardPage() {
             stock: newStock,
             image: p.image,
             is_available: newStock > 0 ? p.is_available : false,
+            is_preorder: Boolean(p.is_preorder),
+            preorder_days: Number(p.preorder_days) || 1,
+            preorder_pickup_date: p.preorder_pickup_date || null,
+            category_id: p.category_id || null,
         };
 
         try {
@@ -2465,6 +2481,16 @@ export default function AdminDashboardPage() {
                                                 <span className="rounded-lg bg-[#342A2C] px-2 py-0.5 text-[9px] text-[#A89F97]">
                                                     {((ord.fulfillment_method || ord.order_type) === "delivery") ? "🛵 Delivery" : "🛍️ Pickup"}
                                                 </span>
+                                                {ord.is_preorder && (
+                                                    <span className="rounded-lg bg-sky-950/70 border border-sky-500/40 px-2 py-0.5 text-[9px] font-bold text-sky-300 flex items-center gap-1">
+                                                        <span>⏳</span> PO Terjadwal
+                                                        {ord.estimated_delivery_date && (
+                                                            <span>
+                                                                ({((ord.fulfillment_method || ord.order_type) === "delivery") ? "Kirim: " : "Ambil: "}{parseUtcDate(ord.estimated_delivery_date)?.toLocaleDateString("id-ID", { day: "numeric", month: "short" })})
+                                                            </span>
+                                                        )}
+                                                    </span>
+                                                )}
                                                 {Boolean(ord.packaging_fee && ord.packaging_fee > 0) && (
                                                     <span className="rounded-lg bg-sky-950/60 border border-sky-500/30 px-2 py-0.5 text-[9px] font-bold text-sky-300">
                                                         ❄️ Bag Thermal + Ice
@@ -3182,7 +3208,7 @@ export default function AdminDashboardPage() {
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                             <div>
                                 <h2 className="text-sm font-bold text-white">Daftar Menu & Stok</h2>
-                                <p className="text-[11px] text-[#A89F97]">Atur menu makanan, kategori hidangan, dan stok dapur.</p>
+                                <p className="text-[11px] text-[#A89F97]">Atur menu makanan, kategori hidangan, dan stok outlet.</p>
                             </div>
                             <div className="flex flex-wrap items-center gap-2">
                                 <button
@@ -3295,9 +3321,15 @@ export default function AdminDashboardPage() {
                                                                 <span className="font-semibold text-xs text-emerald-400">
                                                                     Rp {prod.price?.toLocaleString("id-ID")}
                                                                 </span>
-                                                                <span className="rounded-md bg-[#2A2022] border border-[#3E3234] px-1.5 py-0.2 text-[10px] text-[#E8A598] font-medium">
-                                                                    {prod.category || "Tanpa Kategori"}
+                                                                <span className="rounded-md bg-[#2A2022] border border-[#3E3234] px-1.5 py-0.2 text-[10px] text-[#E8A598] font-medium flex items-center gap-1">
+                                                                    <span>{prod.category_icon || "🍽️"}</span>
+                                                                    <span>{prod.category || "Tanpa Kategori"}</span>
                                                                 </span>
+                                                                {prod.is_preorder && (
+                                                                    <span className="rounded-md bg-sky-950/70 border border-sky-500/40 px-1.5 py-0.2 text-[10px] text-sky-300 font-bold flex items-center gap-1">
+                                                                        <span>⏳</span> {prod.preorder_pickup_date ? `Ready ${prod.preorder_pickup_date}` : `PO ${prod.preorder_days || 1}h`}
+                                                                    </span>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     </div>
@@ -4203,6 +4235,76 @@ export default function AdminDashboardPage() {
                                 </div>
                             </div>
 
+                            {/* OPSI PRE-ORDER (PO) FROZEN FOOD */}
+                            <div className="rounded-2xl border border-sky-500/30 bg-sky-950/20 p-3.5 space-y-2.5">
+                                <div className="flex items-center justify-between">
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={prodIsPreorder}
+                                            onChange={(e) => setProdIsPreorder(e.target.checked)}
+                                            className="h-4 w-4 rounded text-sky-500 accent-sky-500"
+                                        />
+                                        <span className="text-xs font-bold text-sky-200 flex items-center gap-1.5">
+                                            <span>⏳</span> Menu Frozen / Pre-Order (PO)
+                                        </span>
+                                    </label>
+                                    {prodIsPreorder && (
+                                        <span className="text-[10px] font-bold text-sky-400 bg-sky-900/60 px-2 py-0.5 rounded-full border border-sky-500/40">
+                                            {prodPreorderPickupDate ? `Ready ${prodPreorderPickupDate}` : `PO ${prodPreorderDays} Hari`}
+                                        </span>
+                                    )}
+                                </div>
+                                <p className="text-[11px] text-[#A89F97] leading-relaxed">
+                                    Menu bertipe PO hanya bisa dikirim lewat ekspedisi terjadwal (Paxel Cold / Next Day) atau diambil sendiri di Outlet.
+                                </p>
+                                {prodIsPreorder && (
+                                    <div className="pt-1.5 space-y-3">
+                                        <div>
+                                            <div className="flex items-center justify-between mb-1">
+                                                <label className="text-xs font-semibold text-[#D1C7BD]">
+                                                    📅 Tanggal Siap Ambil / Kirim (Patokan Tersedia):
+                                                </label>
+                                                {prodPreorderPickupDate && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setProdPreorderPickupDate("")}
+                                                        className="text-[10px] text-sky-400 hover:underline"
+                                                    >
+                                                        Reset (Gunakan hitungan hari)
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <input
+                                                type="date"
+                                                value={prodPreorderPickupDate}
+                                                onChange={(e) => setProdPreorderPickupDate(e.target.value)}
+                                                className="w-full sm:w-auto rounded-xl border border-sky-500/40 bg-[#191415] px-3.5 py-2 text-xs text-white outline-none focus:border-sky-400 font-bold"
+                                            />
+                                            <p className="text-[10px] text-sky-300/80 mt-1">
+                                                💡 Jika diset, tanggal ini menjadi patokan pasti kapan menu siap diambil di Outlet atau dikirimkan via Paxel.
+                                            </p>
+                                        </div>
+
+                                        <div className="flex items-center gap-2.5 pt-1 border-t border-sky-900/40">
+                                            <label className="text-xs text-[#A89F97] shrink-0">
+                                                Atau gunakan durasi PO (Hari):
+                                            </label>
+                                            <input
+                                                type="number"
+                                                min={1}
+                                                max={60}
+                                                value={prodPreorderDays}
+                                                onChange={(e) => setProdPreorderDays(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                                                className="w-16 rounded-xl border border-[#3E3234] bg-[#191415] px-2 py-1 text-xs text-white text-center font-bold"
+                                                placeholder="3"
+                                            />
+                                            <span className="text-xs text-[#A89F97]">hari</span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
                             {/* UPLOAD FOTO DARI PERANGKAT (MOBILE/LAPTOP LOCAL STORAGE) */}
                             <div className="rounded-2xl border border-[#3E3234] bg-[#191415] p-3.5 space-y-2.5">
                                 <label className="block text-xs font-semibold text-[#D1C7BD]">
@@ -4354,7 +4456,7 @@ export default function AdminDashboardPage() {
                                 <div className="space-y-1.5">
                                     {[
                                         "Stok menu habis mendadak",
-                                        "Outlet tutup lebih awal / kendala dapur",
+                                        "Outlet tutup lebih awal / kendala operasional",
                                         "Alamat pengiriman di luar jangkauan kurir",
                                         "Permintaan pembatalan dari pelanggan via WhatsApp",
                                         "Lainnya",
@@ -5314,9 +5416,14 @@ export default function AdminDashboardPage() {
                                         className="flex items-center justify-between gap-3 rounded-2xl border border-[#3E3234] bg-[#191415] p-3.5 transition hover:border-[#524245]"
                                     >
                                         <div className="flex items-center gap-3 min-w-0">
-                                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#2A2022] text-xl border border-[#3E3234]">
+                                            <button
+                                                type="button"
+                                                onClick={() => openEditCategoryModal(cat)}
+                                                title="Klik untuk ubah icon & kategori"
+                                                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#2A2022] text-xl border border-[#3E3234] hover:border-[#E8A598] hover:scale-105 transition cursor-pointer"
+                                            >
                                                 {cat.icon || "🍽️"}
-                                            </span>
+                                            </button>
                                             <div className="min-w-0">
                                                 <div className="flex flex-wrap items-center gap-2">
                                                     <h4 className="text-sm font-bold text-white truncate">
@@ -5418,6 +5525,30 @@ export default function AdminDashboardPage() {
                                         placeholder="Contoh: Paket Nasi & Lauk"
                                         className="w-full rounded-xl border border-[#3E3234] bg-[#191415] px-3.5 py-2 text-xs text-white outline-none focus:border-[#E8A598]"
                                     />
+                                </div>
+                            </div>
+
+                            {/* Preset Pilihan Emoji Cepat */}
+                            <div>
+                                <label className="block text-[11px] font-medium text-[#A89F97] mb-1.5">
+                                    Pilih Icon Cepat:
+                                </label>
+                                <div className="flex flex-wrap gap-1.5 p-2 rounded-xl border border-[#2E2527] bg-[#191415]">
+                                    {["⏳", "❄️", "🍽️", "🍲", "🥩", "🍱", "🥣", "🥤", "🥟", "🍗", "🍚", "👶", "⭐", "🥗", "🍰", "☕", "🔥", "📦", "✨"].map((emoji) => (
+                                        <button
+                                            key={emoji}
+                                            type="button"
+                                            onClick={() => setCategoryFormIcon(emoji)}
+                                            className={`h-8 w-8 rounded-lg text-base flex items-center justify-center transition ${
+                                                categoryFormIcon === emoji
+                                                    ? "bg-[#7A2E3A] border-2 border-[#E8A598] scale-110 shadow-sm"
+                                                    : "bg-[#251D1F] hover:bg-[#34292C] border border-[#3E3234]"
+                                            }`}
+                                            title={`Pilih ${emoji}`}
+                                        >
+                                            {emoji}
+                                        </button>
+                                    ))}
                                 </div>
                             </div>
 

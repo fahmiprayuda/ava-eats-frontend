@@ -124,6 +124,37 @@ export default function ThermalReceiptModal({ order, onClose }) {
     const discountAmount = order.discount_amount || 0;
     const grandTotal = order.grand_total || order.total_amount || (itemsSubtotal + shippingCost + packagingFee - discountAmount);
 
+    const isPreorder = Boolean(
+        order.is_preorder ||
+        (order.items && order.items.some((it) => it.is_preorder))
+    );
+
+    const estDeliveryDateObj = order.estimated_delivery_date
+        ? parseUtcDate(order.estimated_delivery_date)
+        : isPreorder && orderDateObj
+        ? (() => {
+              const poItems = (order.items || []).filter((it) => it.is_preorder);
+              const poDates = poItems.map((it) => it.preorder_pickup_date).filter(Boolean);
+              if (poDates.length > 0) {
+                  return new Date(poDates.sort().reverse()[0] + "T00:00:00");
+              }
+              const days = poItems.length > 0
+                  ? Math.max(...poItems.map((it) => Number(it.preorder_days) || 1))
+                  : 3;
+              const d = new Date(orderDateObj);
+              d.setDate(d.getDate() + days);
+              return d;
+          })()
+        : null;
+
+    const estDateFormatted = estDeliveryDateObj
+        ? estDeliveryDateObj.toLocaleDateString("id-ID", {
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+          })
+        : null;
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
             {/* Backdrop */}
@@ -271,7 +302,44 @@ export default function ThermalReceiptModal({ order, onClose }) {
                                     </span>
                                 </div>
                             )}
+                            {isPreorder && (
+                                <>
+                                    <div className="flex items-start">
+                                        <span className="w-24 sm:w-28 text-black font-semibold uppercase shrink-0">ORDER TYPE</span>
+                                        <span className="w-3 text-black font-medium shrink-0">:</span>
+                                        <span className="flex-1 text-black font-bold uppercase">
+                                            PRE-ORDER (PO)
+                                        </span>
+                                    </div>
+                                    <div className="flex items-start">
+                                        <span className="w-24 sm:w-28 text-black font-semibold uppercase shrink-0">
+                                            {isDelivery ? "EST. KIRIM" : "EST. AMBIL"}
+                                        </span>
+                                        <span className="w-3 text-black font-medium shrink-0">:</span>
+                                        <span className="flex-1 text-black font-bold uppercase">
+                                            {estDateFormatted || "AKAN DIKONFIRMASI"}
+                                        </span>
+                                    </div>
+                                </>
+                            )}
                         </div>
+
+                        {/* Banner Informasi Pre-Order untuk Outlet & Pelanggan */}
+                        {isPreorder && (
+                            <div className="my-2 border border-black border-dashed p-2 text-center text-black bg-gray-50 rounded">
+                                <p className="font-bold text-[10px] sm:text-[11px] uppercase tracking-wider">
+                                    *** PESANAN PRE-ORDER (PO) ***
+                                </p>
+                                <p className="text-[10px] sm:text-[10.5px] font-black uppercase mt-1">
+                                    {isDelivery
+                                        ? `ESTIMASI DIKIRIM: ${estDateFormatted || "AKAN DIKONFIRMASI"}`
+                                        : `ESTIMASI DIAMBIL: ${estDateFormatted || "AKAN DIKONFIRMASI"}`}
+                                </p>
+                                <p className="text-[8.5px] sm:text-[9px] mt-1 text-gray-800 italic leading-snug">
+                                    * Jadwal pasti akan diberitahu kembali oleh pihak outlet via WhatsApp.
+                                </p>
+                            </div>
+                        )}
 
                         {/* ── 3. Table Items Header ── */}
                         <div className="border-t border-b border-black py-2 mt-2.5 mb-2 flex justify-between font-bold text-black tracking-wider text-[11px] sm:text-xs">
@@ -289,7 +357,14 @@ export default function ThermalReceiptModal({ order, onClose }) {
                                     <div key={idx} className="flex items-start justify-between text-black">
                                         <div className="flex-1 pr-2 flex items-start gap-2">
                                             <span className="font-mono text-gray-700 shrink-0">{itemNum}</span>
-                                            <span className="font-medium">{it.product_name || it.name || "Menu"}</span>
+                                            <div className="min-w-0">
+                                                <span className="font-medium block">{it.product_name || it.name || "Menu"}</span>
+                                                {(it.is_preorder || isPreorder) && (
+                                                    <span className="text-[8.5px] font-bold text-gray-700 uppercase tracking-tight block">
+                                                        [PO / FROZEN]
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                         <span className="w-10 sm:w-12 text-center font-mono shrink-0">
                                             {it.quantity || 1}

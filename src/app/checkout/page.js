@@ -12,6 +12,28 @@ const formatRupiah = (amount) =>
         maximumFractionDigits: 0,
     }).format(amount);
 
+const formatTargetPreorderDate = (targetDateStr, fallbackDays = 1) => {
+    if (targetDateStr) {
+        const d = new Date(targetDateStr + "T00:00:00");
+        if (!isNaN(d.getTime())) {
+            return d.toLocaleDateString("id-ID", {
+                weekday: "long",
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+            });
+        }
+    }
+    const target = new Date();
+    target.setDate(target.getDate() + Number(fallbackDays || 1));
+    return target.toLocaleDateString("id-ID", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+    });
+};
+
 // ─── payment method → Midtrans payment_method param ───────────────────────
 const PAYMENT_METHOD_MAP = {
     qris: "qris",
@@ -172,6 +194,9 @@ export default function CheckoutPage() {
     const [shippingLoading, setShippingLoading] = useState(false);
     const [shippingError, setShippingError] = useState("");
     const [selectedCourierKey, setSelectedCourierKey] = useState("");
+    const [hasPreorderItems, setHasPreorderItems] = useState(false);
+    const [maxPreorderDays, setMaxPreorderDays] = useState(3);
+    const [preorderPickupDate, setPreorderPickupDate] = useState("");
 
     // ── checkout state ────────────────────────────────────────────────────
     const [submitting, setSubmitting] = useState(false);
@@ -203,6 +228,59 @@ export default function CheckoutPage() {
 
         return () => clearTimeout(timer);
     }, []);
+
+    // ── Deteksi status pre-order langsung dari item keranjang (berlaku untuk Pickup maupun Delivery) ──
+    useEffect(() => {
+        if (items.length === 0) return;
+
+        const poList = items.filter((it) => it.is_preorder);
+        if (poList.length > 0) {
+            setHasPreorderItems(true);
+            const poDates = poList.map((it) => it.preorder_pickup_date).filter(Boolean);
+            if (poDates.length > 0) {
+                setPreorderPickupDate(poDates.sort().reverse()[0]);
+            }
+            const maxDays = Math.max(...poList.map((it) => Number(it.preorder_days) || 1));
+            setMaxPreorderDays(maxDays);
+        } else {
+            let isMounted = true;
+            apiRequest("/products")
+                .then((data) => {
+                    if (!isMounted) return;
+                    const prodList = data?.products || [];
+                    const prodMap = new Map(prodList.map((p) => [p.id, p]));
+                    let foundPO = false;
+                    const enriched = items.map((it) => {
+                        const match = prodMap.get(it.product_id);
+                        if (match && match.is_preorder) {
+                            foundPO = true;
+                            return {
+                                ...it,
+                                is_preorder: true,
+                                preorder_days: Number(match.preorder_days) || 1,
+                                preorder_pickup_date: match.preorder_pickup_date || null,
+                            };
+                        }
+                        return it;
+                    });
+                    if (foundPO) {
+                        const enrichedPOs = enriched.filter((it) => it.is_preorder);
+                        setHasPreorderItems(true);
+                        const poDates = enrichedPOs.map((it) => it.preorder_pickup_date).filter(Boolean);
+                        if (poDates.length > 0) {
+                            setPreorderPickupDate(poDates.sort().reverse()[0]);
+                        }
+                        const maxDays = Math.max(...enrichedPOs.map((it) => Number(it.preorder_days) || 1));
+                        setMaxPreorderDays(maxDays);
+                        setItems(enriched);
+                    }
+                })
+                .catch(() => {});
+            return () => {
+                isMounted = false;
+            };
+        }
+    }, [items]);
 
     // ── Load customer profile + addresses ─────────────────────────────────
     useEffect(() => {
@@ -294,6 +372,11 @@ export default function CheckoutPage() {
 
                 const rates = result.pricing || [];
                 setShippingRates(rates);
+                setHasPreorderItems(Boolean(result.has_preorder));
+                setMaxPreorderDays(Number(result.max_preorder_days) || 1);
+                if (result.preorder_pickup_date) {
+                    setPreorderPickupDate(result.preorder_pickup_date);
+                }
 
                 if (rates.length > 0) {
                     setSelectedCourierKey((prev) => {
@@ -836,11 +919,42 @@ export default function CheckoutPage() {
                                     </div>
                                 </div>
 
-                                <div className="mt-4 rounded-lg bg-white/80 p-3 text-sm text-[#496442]">
-                                    Pesanan pickup tidak dikenakan ongkos kirim.
-                                    Informasi waktu pengambilan akan dikonfirmasi setelah
-                                    pesanan diproses.
-                                </div>
+                                {hasPreorderItems ? (
+                                    <div className="mt-4 rounded-2xl border-2 border-sky-300 bg-sky-50/95 p-4 shadow-sm">
+                                        <div className="flex items-start gap-3">
+                                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-xl border border-sky-300">
+                                                ⏳
+                                            </span>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <span className="font-extrabold text-sm text-sky-950">
+                                                        Jadwal Ambil Menu Pre-Order (Frozen)
+                                                    </span>
+                                                    <span className="rounded-full bg-sky-200/90 border border-sky-400/60 px-2.5 py-0.5 text-[10px] font-extrabold text-sky-900">
+                                                        PO {maxPreorderDays} Hari
+                                                    </span>
+                                                </div>
+
+                                                <div className="mt-2.5 rounded-xl bg-white/95 border border-sky-200/80 p-3 shadow-2xs">
+                                                    <span className="block text-[11px] font-semibold uppercase tracking-wider text-sky-700">
+                                                        📅 Estimasi Siap Diambil di Outlet:
+                                                    </span>
+                                                    <span className="block text-sm sm:text-base font-black text-sky-950 mt-0.5">
+                                                        {formatTargetPreorderDate(preorderPickupDate, maxPreorderDays)}
+                                                    </span>
+                                                </div>
+
+                                                <p className="mt-2 text-xs text-sky-800 leading-relaxed">
+                                                    Pesanan Moms dimasak & dibekukan higienis terlebih dahulu. Pesanan dapat diambil langsung di Outlet Ava Eats mulai tanggal di atas. Kami juga akan mengirim notifikasi WhatsApp begitu pesanan siap diambil.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="mt-4 rounded-xl bg-white/80 p-3 text-xs text-[#496442] border border-[#CCDBC5]">
+                                        🌿 Pesanan pickup tidak dikenakan ongkos kirim. Informasi waktu pengambilan akan dikonfirmasi via WhatsApp setelah pesanan siap.
+                                    </div>
+                                )}
                             </div>
                         )}
                     </section>
@@ -964,6 +1078,40 @@ export default function CheckoutPage() {
 
                                         {/* ── Pilihan Kurir & Ongkir ── */}
                                         <div className="mt-6 border-t border-[#E8D6CE] pt-5">
+                                            {/* BANNER NOTIFIKASI KHUSUS PRE-ORDER FROZEN */}
+                                            {hasPreorderItems && (
+                                                <div className="mb-5 rounded-2xl border-2 border-sky-300 bg-sky-50/95 p-4 shadow-sm text-xs text-sky-950">
+                                                    <div className="flex items-start gap-3">
+                                                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-xl border border-sky-300">
+                                                            ⏳
+                                                        </span>
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex flex-wrap items-center gap-2">
+                                                                <span className="font-extrabold text-sm text-sky-950">
+                                                                    Jadwal Kirim Pre-Order (Frozen)
+                                                                </span>
+                                                                <span className="rounded-full bg-sky-200/90 border border-sky-400/60 px-2.5 py-0.5 text-[10px] font-extrabold text-sky-900">
+                                                                    PO {maxPreorderDays} Hari
+                                                                </span>
+                                                            </div>
+
+                                                            <div className="mt-2.5 rounded-xl bg-white/95 border border-sky-200/80 p-3 shadow-2xs">
+                                                                <span className="block text-[11px] font-semibold uppercase tracking-wider text-sky-700">
+                                                                    📦 Estimasi Jadwal Pengiriman Ekspedisi:
+                                                                </span>
+                                                                <span className="block text-sm sm:text-base font-black text-sky-950 mt-0.5">
+                                                                    Dikirim pada {formatTargetPreorderDate(preorderPickupDate, maxPreorderDays)}
+                                                                </span>
+                                                            </div>
+
+                                                            <p className="mt-2 text-xs text-sky-800 leading-relaxed">
+                                                                Pesanan ini akan dimasak fresh lalu dibekukan khusus. Paket akan diserahkan ke kurir Paxel (Cold Storage berpendingin) pada tanggal di atas dan dikirimkan langsung ke alamat Moms.
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+
                                             <div className="mb-3 flex items-center justify-between">
                                                 <h3 className="font-semibold text-[#2A2620]">
                                                     Pilih Layanan Pengiriman
@@ -1188,7 +1336,14 @@ export default function CheckoutPage() {
                                     key={item.product_id}
                                 >
                                     <div className="checkout-item-info">
-                                        <strong>{item.name}</strong>
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                            <strong>{item.name}</strong>
+                                            {item.is_preorder && (
+                                                <span className="rounded bg-sky-100 text-sky-800 border border-sky-300/60 px-1.5 py-0.2 text-[9px] font-bold">
+                                                    ⏳ PO {item.preorder_days || 7}h
+                                                </span>
+                                            )}
+                                        </div>
                                         <span>
                                             {item.quantity} × {formatRupiah(item.price)}
                                         </span>
@@ -1385,6 +1540,17 @@ export default function CheckoutPage() {
                             )}
                         </div>
 
+                        {hasPreorderItems && (
+                            <div className="mb-4 rounded-xl border border-sky-300 bg-sky-50/90 p-3 text-xs text-sky-950 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 shadow-2xs">
+                                <span className="flex items-center gap-1.5 font-bold text-sky-900">
+                                    <span>⏳</span> {fulfillmentMethod === "pickup" ? "Jadwal Siap Ambil di Outlet:" : "Estimasi Jadwal Kirim:"}
+                                </span>
+                                <span className="font-extrabold text-sky-950 text-xs sm:text-sm bg-white/90 px-2.5 py-1 rounded-lg border border-sky-200/80">
+                                    📅 {formatTargetPreorderDate(preorderPickupDate, maxPreorderDays)}
+                                </span>
+                            </div>
+                        )}
+
                         <div className="checkout-total-row">
                             <span>Total item</span>
                             <strong>{totalItems} item</strong>
@@ -1439,9 +1605,13 @@ export default function CheckoutPage() {
                         </div>
 
                         <p className="checkout-footnote">
-                            {fulfillmentMethod === "delivery" && selectedRate
-                                ? `Sudah termasuk ongkir ${selectedRate.courier_name} (${selectedRate.courier_service_name}). Transaksi diproses aman via Midtrans.`
-                                : "Pesanan siap diambil di lokasi outlet setelah pembayaran terkonfirmasi."}
+                            {hasPreorderItems
+                                ? fulfillmentMethod === "pickup"
+                                    ? `Menu PO siap diambil mulai ${formatTargetPreorderDate(preorderPickupDate, maxPreorderDays)}. Kami akan mengirim notifikasi WhatsApp saat pesanan siap diambil.`
+                                    : `Menu PO dijadwalkan dikirimkan via Paxel Cold pada ${formatTargetPreorderDate(preorderPickupDate, maxPreorderDays)}. Transaksi diproses aman via Midtrans.`
+                                : fulfillmentMethod === "delivery" && selectedRate
+                                    ? `Sudah termasuk ongkir ${selectedRate.courier_name} (${selectedRate.courier_service_name}). Transaksi diproses aman via Midtrans.`
+                                    : "Pesanan siap diambil di lokasi outlet setelah pembayaran terkonfirmasi."}
                         </p>
                     </section>
 

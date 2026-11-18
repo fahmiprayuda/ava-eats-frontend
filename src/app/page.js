@@ -412,6 +412,9 @@ export default function Home() {
             name: p.name,
             price: p.price,
             quantity: p.id === productId ? nextQuantity : (nextQuantities[p.id] || 0),
+            is_preorder: Boolean(p.is_preorder),
+            preorder_days: Number(p.preorder_days) || 1,
+            preorder_pickup_date: p.preorder_pickup_date || null,
           }))
           .filter((item) => item.quantity > 0);
 
@@ -531,7 +534,7 @@ export default function Home() {
                       Pesanan #{latestPending.order_code || latestPending.id} • {formatRupiah(totalUnpaid)}
                     </p>
                     <p className="text-[11px] text-[#78686A] mt-0.5 line-clamp-1">
-                      Silakan selesaikan pembayaran agar makanan Moms dapat segera disiapkan dapur.
+                      Silakan selesaikan pembayaran agar makanan Moms dapat segera disiapkan pihak outlet.
                     </p>
                   </div>
                 </div>
@@ -794,6 +797,14 @@ export default function Home() {
                       <span className="popular-badge text-[7px] px-1 py-0.5">★ Favorit</span>
                     )}
 
+                    {product.is_preorder && (
+                      <span className="absolute bottom-1 left-1 z-10 rounded-md bg-sky-950/90 text-sky-200 border border-sky-400/50 px-1.5 py-0.5 text-[8px] font-bold shadow-xs flex items-center gap-1">
+                        <span>⏳</span> {product.preorder_pickup_date
+                          ? `Ready ${new Date(product.preorder_pickup_date + 'T00:00:00').toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}`
+                          : `PO ${product.preorder_days || 1}h`}
+                      </span>
+                    )}
+
                     {/* Status Badge */}
                     {product.available ? (
                       <span className="absolute top-1 left-1 z-10 rounded-md bg-[#2D7A4D]/95 text-white px-1.5 py-0.5 text-[8px] font-bold shadow-xs">
@@ -807,22 +818,27 @@ export default function Home() {
                   </div>
 
                   <div className="flex flex-1 flex-col p-2">
-                    <p className="text-[8px] font-extrabold uppercase tracking-wide text-[#6E8F63] truncate">
-                      {product.category}
-                    </p>
+                    <div className="flex items-center justify-between gap-1">
+                      <p className="text-[8px] font-extrabold uppercase tracking-wide text-[#6E8F63] truncate flex items-center gap-1">
+                        {product.category_icon && <span>{product.category_icon}</span>}
+                        <span>{product.category}</span>
+                      </p>
+                      {product.stock > 0 && (
+                        <span className={`shrink-0 text-[8px] font-bold px-1.5 py-0.2 rounded ${
+                          product.is_preorder
+                            ? "bg-sky-100 text-sky-800"
+                            : product.stock <= 5
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-[#EFEAE2] text-[#6B6459]"
+                        }`}>
+                          {product.is_preorder ? `Sisa ${product.stock} slot` : `Qty : ${product.stock}`}
+                        </span>
+                      )}
+                    </div>
 
                     <h3 className="text-[11px] font-bold leading-tight text-[#2A2620] line-clamp-2 mt-0.5 min-h-[26px]">
                       {product.name}
                     </h3>
-
-                    {SHOW_PRODUCT_STOCK && (
-                      <span
-                        className={`shrink-0 text-[8px] mt-0.5 ${product.available ? "text-[#6B6459]" : "text-red-600"
-                          }`}
-                      >
-                        {product.stock > 0 ? `Stok: ${product.stock}` : "Habis"}
-                      </span>
-                    )}
 
                     {product.description && (
                       <p className="text-[8.5px] leading-tight text-[#83776D] line-clamp-2 mt-1 mb-1.5">
@@ -867,6 +883,14 @@ export default function Home() {
                         <span className="popular-badge text-[7px] px-1 py-0.5">★ Favorit</span>
                       )}
 
+                      {product.is_preorder && (
+                        <span className="absolute bottom-1 left-1 z-10 rounded-md bg-sky-950/90 text-sky-200 border border-sky-400/50 px-1.5 py-0.5 text-[8px] font-bold shadow-xs flex items-center gap-1">
+                          <span>⏳</span> {product.preorder_pickup_date
+                            ? `Ready ${new Date(product.preorder_pickup_date + 'T00:00:00').toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}`
+                            : `PO ${product.preorder_days || 1}h`}
+                        </span>
+                      )}
+
                       {!product.available && (
                         <span className="absolute top-1 left-1 z-10 rounded-md bg-[#766E67]/95 text-white px-1.5 py-0.5 text-[8px] font-bold shadow-xs">
                           Habis
@@ -875,22 +899,27 @@ export default function Home() {
                     </div>
 
                     <div className="flex flex-1 flex-col p-2">
-                      <p className="text-[8px] font-extrabold uppercase tracking-wide text-[#6E8F63] truncate">
-                        {product.category}
-                      </p>
+                      <div className="flex items-center justify-between gap-1">
+                        <p className="text-[8px] font-extrabold uppercase tracking-wide text-[#6E8F63] truncate flex items-center gap-1">
+                          {product.category_icon && <span>{product.category_icon}</span>}
+                          <span>{product.category}</span>
+                        </p>
+                        {product.stock > 0 && (
+                          <span className={`shrink-0 text-[8px] font-bold px-1.5 py-0.2 rounded ${
+                            product.is_preorder
+                              ? "bg-sky-100 text-sky-800"
+                              : product.stock <= 5
+                                ? "bg-amber-100 text-amber-800"
+                                : "bg-[#EFEAE2] text-[#6B6459]"
+                          }`}>
+                            {product.is_preorder ? `Sisa ${product.stock} slot` : `Qty : ${product.stock}`}
+                          </span>
+                        )}
+                      </div>
 
                       <h3 className="text-[11px] font-bold leading-tight text-[#2A2620] line-clamp-2 mt-0.5 min-h-[26px]">
                         {product.name}
                       </h3>
-
-                      {SHOW_PRODUCT_STOCK && (
-                        <span
-                          className={`shrink-0 text-[8px] mt-0.5 ${product.available ? "text-[#6B6459]" : "text-red-600"
-                            }`}
-                        >
-                          {product.stock > 0 ? `Stok: ${product.stock}` : "Habis"}
-                        </span>
-                      )}
 
                       {product.description && (
                         <p className="text-[8.5px] leading-tight text-[#83776D] line-clamp-2 mt-1 mb-1.5">
@@ -1060,7 +1089,16 @@ export default function Home() {
                   </div>
 
                   <div className="cart-item-info">
-                    <strong>{product.name}</strong>
+                    <strong className="flex items-center gap-1.5 flex-wrap">
+                      <span>{product.name}</span>
+                      {product.is_preorder && (
+                        <span className="rounded bg-sky-100 text-sky-800 border border-sky-300/60 px-1 py-0.2 text-[9px] font-bold">
+                          ⏳ {product.preorder_pickup_date
+                            ? `Ready ${new Date(product.preorder_pickup_date + 'T00:00:00').toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}`
+                            : `PO ${product.preorder_days || 1}h`}
+                        </span>
+                      )}
+                    </strong>
                     <span>{formatRupiah(product.price)}</span>
                   </div>
 
@@ -1096,6 +1134,60 @@ export default function Home() {
                 <span>Total sementara</span>
                 <strong>{formatRupiah(totalPrice)}</strong>
               </div>
+              {cartItems.some((p) => p.is_preorder) && (() => {
+                const poItems = cartItems.filter((p) => p.is_preorder);
+                const poDates = poItems
+                  .map((p) => p.preorder_pickup_date)
+                  .filter(Boolean);
+
+                let formattedTargetDate = "";
+                let headerText = "";
+
+                if (poDates.length > 0) {
+                  const latestDateStr = poDates.sort().reverse()[0];
+                  const d = new Date(latestDateStr + "T00:00:00");
+                  formattedTargetDate = d.toLocaleDateString("id-ID", {
+                    weekday: "short",
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                  });
+                  headerText = `Pre-Order (Ready ${d.toLocaleDateString("id-ID", { day: "numeric", month: "short" })})`;
+                } else {
+                  const maxDays = poItems.length > 0
+                    ? Math.max(...poItems.map((p) => Number(p.preorder_days) || 1))
+                    : 1;
+                  const estDate = new Date();
+                  estDate.setDate(estDate.getDate() + maxDays);
+                  formattedTargetDate = estDate.toLocaleDateString("id-ID", {
+                    weekday: "short",
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                  });
+                  headerText = `Pre-Order (PO ${maxDays} Hari)`;
+                }
+
+                return (
+                  <div className="my-2.5 rounded-xl border border-sky-300 bg-sky-50/95 p-3 text-left shadow-2xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-extrabold text-xs text-sky-950 flex items-center gap-1.5">
+                        <span>⏳</span>
+                        <span>{headerText}</span>
+                      </span>
+                      <span className="rounded-md bg-sky-200/80 px-2 py-0.5 text-[10px] font-bold text-sky-900">
+                        ❄️ Frozen
+                      </span>
+                    </div>
+                    <p className="mt-1.5 text-[11px] text-sky-800 leading-relaxed">
+                      Estimasi siap di Outlet / dikirim:{" "}
+                      <strong className="text-sky-950 font-bold underline decoration-sky-300">
+                        {formattedTargetDate}
+                      </strong>
+                    </p>
+                  </div>
+                );
+              })()}
               <p className="summary-note">
                 Ongkir dan detail pembayaran dihitung pada tahap
                 checkout.
@@ -1111,6 +1203,9 @@ export default function Home() {
                   name: product.name,
                   price: product.price,
                   quantity: quantities[product.id],
+                  is_preorder: Boolean(product.is_preorder),
+                  preorder_days: Number(product.preorder_days) || 1,
+                  preorder_pickup_date: product.preorder_pickup_date || null,
                 }));
 
                 localStorage.setItem(
