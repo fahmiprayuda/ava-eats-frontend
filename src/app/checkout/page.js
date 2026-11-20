@@ -93,7 +93,7 @@ export default function CheckoutPage() {
                 const params = new URLSearchParams(window.location.search);
                 codeFromUrl = params.get("promo") || "";
             }
-        } catch {}
+        } catch { }
 
         let storedPromoObj = null;
         let storedPromoCode = "";
@@ -110,7 +110,7 @@ export default function CheckoutPage() {
             if (!storedPromoCode) {
                 storedPromoCode = localStorage.getItem("ava_eats_promo_code") || "";
             }
-        } catch {}
+        } catch { }
 
         const targetCode = (codeFromUrl || storedPromoCode || "").trim().toUpperCase();
         if (!targetCode) return;
@@ -120,7 +120,7 @@ export default function CheckoutPage() {
             try {
                 localStorage.removeItem("ava_eats_selected_promo");
                 localStorage.removeItem("ava_eats_promo_code");
-            } catch {}
+            } catch { }
             setAppliedPromo(null);
             setPromoError(`Kupon promo "${storedPromoCode}" telah kedaluwarsa dan otomatis dilepas.`);
             return;
@@ -158,7 +158,7 @@ export default function CheckoutPage() {
             try {
                 localStorage.setItem("ava_eats_selected_promo", JSON.stringify(activePromo));
                 localStorage.setItem("ava_eats_promo_code", activePromo.code);
-            } catch {}
+            } catch { }
         } else if (availablePromos.length > 0 || codeFromUrl) {
             setPromoInput(targetCode);
             handleApplyPromo(targetCode);
@@ -275,7 +275,7 @@ export default function CheckoutPage() {
                         setItems(enriched);
                     }
                 })
-                .catch(() => {});
+                .catch(() => { });
             return () => {
                 isMounted = false;
             };
@@ -681,7 +681,7 @@ export default function CheckoutPage() {
                 try {
                     localStorage.setItem("ava_eats_selected_promo", JSON.stringify(validatedPromo));
                     localStorage.setItem("ava_eats_promo_code", validatedPromo.code);
-                } catch {}
+                } catch { }
             } else {
                 handleRemovePromo();
                 setPromoError(res.message || "Kode promo tidak valid atau sudah kedaluwarsa.");
@@ -706,7 +706,7 @@ export default function CheckoutPage() {
                 url.searchParams.delete("promo");
                 window.history.replaceState({}, "", url.pathname + url.search);
             }
-        } catch {}
+        } catch { }
     }
 
     // ── Derived ───────────────────────────────────────────────────────────
@@ -1187,8 +1187,8 @@ export default function CheckoutPage() {
                                                                 className={`flex cursor-pointer items-start justify-between rounded-xl border p-3.5 transition ${isSelected
                                                                     ? "border-[#7A2E3A] bg-[#F3E1DE]/40 shadow-sm"
                                                                     : isPaxel
-                                                                    ? "border-[#BAE6FD] bg-[#F0F9FF]/70 hover:bg-[#F0F9FF]"
-                                                                    : "border-[#E8D6CE] bg-white hover:bg-[#FAF7F2]"
+                                                                        ? "border-[#BAE6FD] bg-[#F0F9FF]/70 hover:bg-[#F0F9FF]"
+                                                                        : "border-[#E8D6CE] bg-white hover:bg-[#FAF7F2]"
                                                                     }`}
                                                             >
                                                                 <div className="flex min-w-0 items-start gap-3">
@@ -1273,12 +1273,12 @@ export default function CheckoutPage() {
                             <span className="payment-icon text-2xl">📱</span>
                             <span className="payment-copy">
                                 <strong className="flex items-center gap-2">
-                                    QRIS (Langsung Scan Barcode)
+                                    QRIS
                                     <span className="rounded-full bg-[#7A2E3A]/10 text-[#7A2E3A] px-2 py-0.5 text-[10px] font-bold">
                                         Instan & Otomatis
                                     </span>
                                 </strong>
-                                <small>Scan QR via GoPay, OVO, DANA, BCA, Livin Mandiri, BRImo, ShopeePay & Semua Bank</small>
+                                <small>Scan QR</small>
                             </span>
                             <span className="payment-check">
                                 {paymentMethod === "qris" ? "✓" : ""}
@@ -1441,21 +1441,18 @@ export default function CheckoutPage() {
                             </div>
 
                             {appliedPromo ? (
-                                <div className={`flex items-center justify-between gap-3 rounded-xl border p-3 ${
-                                    isPromoExpired
-                                        ? "border-red-300 bg-red-50/90"
-                                        : "border-emerald-300 bg-emerald-50/90"
-                                }`}>
+                                <div className={`flex items-center justify-between gap-3 rounded-xl border p-3 ${isPromoExpired
+                                    ? "border-red-300 bg-red-50/90"
+                                    : "border-emerald-300 bg-emerald-50/90"
+                                    }`}>
                                     <div className="min-w-0 flex-1">
                                         <div className="flex items-center gap-2">
-                                            <span className={`rounded px-2 py-0.5 text-xs font-black uppercase text-white tracking-wide ${
-                                                isPromoExpired ? "bg-red-600" : "bg-emerald-600"
-                                            }`}>
+                                            <span className={`rounded px-2 py-0.5 text-xs font-black uppercase text-white tracking-wide ${isPromoExpired ? "bg-red-600" : "bg-emerald-600"
+                                                }`}>
                                                 {appliedPromo.code}
                                             </span>
-                                            <strong className={`text-xs font-bold truncate ${
-                                                isPromoExpired ? "text-red-950" : "text-emerald-950"
-                                            }`}>
+                                            <strong className={`text-xs font-bold truncate ${isPromoExpired ? "text-red-950" : "text-emerald-950"
+                                                }`}>
                                                 {appliedPromo.name || "Promo Aktif"}
                                             </strong>
                                         </div>
